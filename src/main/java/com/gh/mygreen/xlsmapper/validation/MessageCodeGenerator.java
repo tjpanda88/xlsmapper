@@ -4,14 +4,15 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import com.gh.mygreen.xlsmapper.ArgUtils;
-import com.gh.mygreen.xlsmapper.Utils;
+import com.gh.mygreen.xlsmapper.util.ArgUtils;
+import com.gh.mygreen.xlsmapper.util.Utils;
 
 
 /**
  * メッセージのコードを生成するクラス。
  * <p>Stringの「DefaultMessageCodeResolver」を参照。
  * 
+ * @version 2.0
  * @author T.TSUCHIE
  *
  */
@@ -39,17 +40,18 @@ public class MessageCodeGenerator {
      * 型変換エラーコードの候補を生成する。
      * @param objectName
      * @param field
-     * @param fileType
+     * @param filedType
      * @return
      */
-    public String[] generateTypeMismatchCodes(final String objectName, final String field, final Class<?> fileType) {
-        return generateCodes(getTypeMismatchCode(), objectName, field, fileType);
+    public String[] generateTypeMismatchCodes(final String objectName, final String field, final Class<?> filedType) {
+        return generateCodes(getTypeMismatchCode(), objectName, field, filedType);
     }
     
     /**
      * オブジェクト名のキーの候補を生成する。
-     * @param objectName
-     * @return
+     * <p>クラスパスの区切り文字(.)がある場合、それらを除いたものを候補とする。</p>
+     * @param objectName クラス名など。
+     * @return キーの候補
      */
     public String[] generateObjectNameCodes(final String objectName) {
         
@@ -128,16 +130,21 @@ public class MessageCodeGenerator {
         
         final String baseCode = getPrefix().isEmpty() ? code : getPrefix() + code;
         final List<String> codeList = new ArrayList<>();
+        
+        final List<String> objectNameList = Arrays.asList(generateObjectNameCodes(objectName));
         final List<String> fieldList = new ArrayList<>();
         buildFieldList(field, fieldList);
         
-        addCodes(codeList, baseCode, objectName, fieldList);
-        
         if(Utils.isNotEmpty(field)) {
+            // 最後のフィールド名のみを取得する
             int dotIndex = field.lastIndexOf('.');
             if(dotIndex > 0) {
                 buildFieldList(field.substring(dotIndex + 1), fieldList);
             }
+        }
+        
+        for(final String name : objectNameList) {
+            addCodes(codeList, baseCode, name, fieldList);
         }
         
         addCodes(codeList, code, null, fieldList);
@@ -145,9 +152,15 @@ public class MessageCodeGenerator {
         if(fieldType != null) {
             addCode(codeList, code, null, fieldType.getName());
             
-            // 列挙型の場合は、java.lang.Enumとしてクラスタイプを追加する。
             if(Enum.class.isAssignableFrom(fieldType)) {
+                // 列挙型の場合は、java.lang.Enumとしてクラスタイプを追加する。
                 addCode(codeList, code, null, Enum.class.getName());
+                
+            } else if(fieldType.isArray()) {
+                // 配列の場合は、"配列のクラスタイプ+[]"を追加する。
+                Class<?> componentType = fieldType.getComponentType();
+                addCode(codeList, code, null, componentType.getName() + "[]");
+                addCode(codeList, code, null, "java.lang.Object[]");
             }
         }
         
@@ -197,7 +210,7 @@ public class MessageCodeGenerator {
     
     private void addCode(final List<String> codeList, final String code, final String objectName, final String field) {
         final String formattedCode = formatCode(code, objectName, field);
-        if(!codeList.contains(codeList)) {
+        if(!codeList.contains(formattedCode)) {
             codeList.add(formattedCode);
         }
     }
@@ -217,18 +230,34 @@ public class MessageCodeGenerator {
         
     }
     
+    /**
+     * メッセージの接頭語を取得する。
+     * @return 接頭語を返す。デフォルトは、空文字。
+     */
     public String getPrefix() {
         return prefix;
     }
     
+    /**
+     * メッセージの接頭語を設定する。
+     * @param prefix 接頭語
+     */
     public void setPrefix(String prefix) {
         this.prefix = prefix;
     }
     
+    /**
+     * 型変換エラー時のエラーコードを取得する。
+     * @return デフォルトは、'{@literal cellTypeMismatch}'。
+     */
     public String getTypeMismatchCode() {
         return typeMismatchCode;
     }
     
+    /**
+     * 型変換エラー時のエラーコードを設定する。
+     * @param typeMismatchCode 型変換エラー時のエラーコード
+     */
     public void setTypeMismatchCode(String typeMismatchCode) {
         this.typeMismatchCode = typeMismatchCode;
     }

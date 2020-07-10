@@ -1,24 +1,77 @@
+[![Maven Central](https://maven-badges.herokuapp.com/maven-central/com.github.mygreen/xlsmapper/badge.svg)](https://maven-badges.herokuapp.com/maven-central/com.github.mygreen/xlsmapper/)
+[![Javadocs](http://javadoc.io/badge/com.github.mygreen/xlsmapper.svg?color=blue)](http://javadoc.io/doc/com.github.mygreen/xlsmapper)
+[![Build Status](https://travis-ci.org/mygreen/xlsmapper.svg?branch=master)](https://travis-ci.org/mygreen/xlsmapper)
+[![SonarQube](https://sonarcloud.io/api/project_badges/measure?project=com.github.mygreen%3Axlsmapper&metric=alert_status)](https://sonarcloud.io/dashboard?id=com.github.mygreen%3Axlsmapper)
 
 # XlsMapper
 
 XlsMapper is Java Library for mapping Excel sheets to POJO.
 
-* Licensee
+# Licensee
 
 Apache License verion 2.0
 
+# Depends
++ Java1.8
++ Apache POI v3.17
++ SpringFramework 3.0+ (optional)
++ BeanValidation 1.0/1.1/2.0 (optional)
+
 # Setup
 
-```xml
-<dependency>
-	<groupId>com.github.mygreen</groupId>
-	<artifactId>xlsmapper</artifactId>
-	<version>1.4.4</version>
-</dependency>
-```
+1. Add dependency for XlsMapper
+    ```xml
+    <dependency>
+        <groupId>com.github.mygreen</groupId>
+        <artifactId>xlsmapper</artifactId>
+        <version>2.1</version>
+    </dependency>
+    ```
+
+2. Add dependency for Logging library. Example Log4j.
+    ```xml
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-log4j12</artifactId>
+        <version>1.7.1</version>
+    </dependency>
+    <dependency>
+        <groupId>log4j</groupId>
+        <artifactId>log4j</artifactId>
+        <version>1.2.14</version>
+    </dependency>
+    ```
+
+# Build
+
+1. Setup Java SE 8 (1.8.0_121+)
+2. Setup Maven
+3. Setup Sphinx (building for manual)
+    1. install Python
+    2. install sphinx and theme for read the docs, janome
+    ```console
+    # pip install sphinx
+    # pip install sphinx_rtd_theme --upgrade
+    # pip install janome
+    ```
+4. Build with Maven
+    1. make jar files.
+    ```console
+    # mvn clean package
+    ```
+    2. generate site.
+    ```console
+    # mvn site -Dgpg.skip=true
+    ```
 
 # Documentation
-http://mygreen.github.io/xlsmapper/sphinx/howtouse.html
+- Project infomation
+  - http://mygreen.github.io/xlsmapper/index.html
+- Manual
+  - http://mygreen.github.io/xlsmapper/sphinx/index.html
+- Javadoc
+  - http://mygreen.github.io/xlsmapper/apidocs/index.html
+  - http://javadoc.io/doc/com.github.mygreen/xlsmapper/
 
 # Getting Started
 For example, here is one Excel sheet.
@@ -93,18 +146,19 @@ Here is the template Excel sheet.
 
 
 And the following is the record class. 
-- Append the annotation ```@XlsDateConverter``` for setting Excel format pattern.
-- Append the attribute ```overRecord``` with ```@XlsHorizontalRecords```.
+- Append the annotation ```@XlsDateTimeConverter``` for setting Excel format pattern.
+- Append the annotation ```@XlsRecordOption``` and attribute ```overOperation``` .
 
 ```java
 @XlsSheet(name="List")
 public class UserSheet {
 
     @XlsLabelledCell(label="Date", type=LabelledCellType.Right)
-    @XlsDateConverter(excelPattern="yyyy/m/d")
+    @XlsDateTimeConverter(excelPattern="yyyy/m/d")
     Date createDate;
 
-    @XlsHorizontalRecords(tableLabel="User List", overRecord=OverRecordOperate.Insert)
+    @XlsHorizontalRecords(tableLabel="User List")
+    @XlsRecordOption(overOperation=OverOperation.Insert)
     List<UserRecord> users;
 
 }

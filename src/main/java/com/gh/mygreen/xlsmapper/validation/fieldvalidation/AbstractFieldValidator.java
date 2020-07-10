@@ -1,116 +1,122 @@
 package com.gh.mygreen.xlsmapper.validation.fieldvalidation;
 
-import java.awt.Point;
-import java.util.LinkedHashMap;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
-import com.gh.mygreen.xlsmapper.Utils;
-import com.gh.mygreen.xlsmapper.validation.SheetBindingErrors;
+import com.github.mygreen.cellformatter.lang.ArgUtils;
 
 /**
- * フィールドValidatorの抽象クラス。
+ * フィールドの値を検証するための抽象クラス。
+ * <p>基本的に、{@link FieldValidator}を実装する際には、このクラスを継承して作成します。</p>
+ *
+ * @version 2.0
  * @author T.TSUCHIE
  * @param <T> チェック対象のフィールドのタイプ
  *
  */
-public abstract class AbstractFieldValidator<T> implements FieldValidator<T>, CellFieldValidator<T> {
-    
-    /** カスタムメッセージのキー */
-    protected String customMessageKey;
-    
-    public AbstractFieldValidator() {
-    
-    }
-    
-    /**
-     * 値がnullかどうか判定を行う。
-     * <p>値が空文字も同様。
-     * @param value
-     * @return
-     */
-    public boolean isNullValue(final T value) {
-        return (value == null || value.toString().isEmpty());
-    }
-    
-    /**
-     * 値がnull出ないかどうか判定を行う。
-     * @return
-     */
-    public boolean isNotNullValue(T value) {
-        return !isNullValue(value);
-    }
-    
-    /**
-     * 標準の入力値エラー時のメッセージキーを取得する。
-     * @return
-     */
-    public String getMessageKey() {
-        if(Utils.isEmpty(getCustomMessageKey())) {
-            return getDefaultMessageKey();
+public abstract class AbstractFieldValidator<T> extends GroupValidatorSupport implements FieldValidator<T> {
+
+    @Override
+    public boolean validate(final CellField<T> cellField, final List<Class<?>> validationGroups) {
+
+        // 必須チェックは、CellFieldで行っているため、値が空の場合は無視する。
+        if(cellField.isInputEmpty() && !validateOnEmptyValue()) {
+            return true;
         }
-        return getCustomMessageKey();
+
+        if(!containsValidationGroups(validationGroups)) {
+            // バリデーション時のヒントが該当しない場合は、スキップする。
+            return true;
+        }
+
+        onValidate(cellField);
+
+        return !cellField.hasErrors();
+
+
     }
-    
+
     /**
-     * 通常のメッセージキーの取得
+     * バリデーション時のヒントを追加する。
+     * @param groups バリデーション時のヒント。
+     * @return 自身のインスタンス。
      */
-    public abstract String getDefaultMessageKey();
-    
-    /**
-     * 任意のメッセージキーの取得
-     * @return
-     */
-    public String getCustomMessageKey() {
-        return customMessageKey;
-    }
-    
-    /**
-     * 任意のメッセージキーの設定
-     * @param customMessageKey
-     * @return
-     */
-    public AbstractFieldValidator<T> setCustomMessageKey(String customMessageKey) {
-        this.customMessageKey = customMessageKey;
+    public AbstractFieldValidator<T> addGroup(final Class<?>... groups) {
+
+        super.addGroup(groups);
         return this;
     }
-    
-    @Override
-    public boolean validate(final String fieldName, final T value, final SheetBindingErrors errors) {
-        
-        if(validate(value)) {
-            return true;
-        }
-        
-        errors.rejectValue(fieldName, value, value.getClass(), getMessageKey(), getMessageVars(value));
-        
-        return false;
-    }
-    
-    @Override
-    public boolean validate(final String fieldName, final T value, final Point cellAddress, final SheetBindingErrors errors) {
-        
-        if(validate(value)) {
-            return true;
-        }
-        
-        final Map<String, Object> messageVars = getMessageVars(value);
-        errors.rejectSheetValue(fieldName, value, value.getClass(), cellAddress, getMessageKey(), messageVars);
-        
-        return false;
-    }
-    
+
     /**
-     * 入力値の検証を行う。
-     * @param value 検証対象の値
-     * @return
+     * 値の検証を行います。
+     * @param cellField フィールド情報
      */
-    protected abstract boolean validate(T value);
-    
+    protected abstract void onValidate(CellField<T> cellField);
+
     /**
-     * メッセージ中の変数を取得する。
-     * @param value 検証対象の値
-     * @return メッセージ中の変数のマップ。
+     * エラーメッセージ中の変数を取得します。
+     * @return エラーメッセージ中の変数。
      */
-    protected abstract LinkedHashMap<String, Object> getMessageVars(T value);
-    
+    protected Map<String, Object> getMessageVariables(final CellField<T> cellField) {
+
+        final Map<String, Object> variables = new HashMap<>();
+        variables.put("validatedValue", cellField.getValue());
+        Optional.ofNullable(cellField.getFormatter())
+            .ifPresent(f -> variables.put("fieldFormatter", f));
+        return variables;
+
+    }
+
+    /**
+     * エラー情報を追加します。
+     * <p>エラーメッセージのキーは、{@link #getMessageKey()}の値を使用するため、必ず空以外の値を返す必要があります。</p>
+     * <p>エラーメッセージ中の変数は、{@link #getMessageVariables(CellField)}の値を使用します。</p>
+     * @param cellField フィールド情報
+     */
+    public void error(final CellField<T> cellField) {
+        ArgUtils.notNull(cellField, "cellField");
+        error(cellField, getMessageKey(), getMessageVariables(cellField));
+    }
+
+    /**
+     * エラー情報を追加します。
+     * <p>エラーメッセージは、{@link #getMessageKey()}の値を使用するため、必ず空以外の値を返す必要があります。</p>
+     * @param cellField フィールド情報
+     * @param messageVariables メッセージ中の変数
+     */
+    public void error(final CellField<T> cellField, final Map<String, Object> messageVariables) {
+        error(cellField, getMessageKey(), messageVariables);
+    }
+
+    /**
+     * メッセージキーを指定して、エラー情報を追加します。
+     * <p>エラーメッセージ中の変数は、{@link #getMessageVariables(CellField)}の値を使用します。</p>
+     * @param cellField フィールド情報
+     * @param messageKey メッセージキー
+     * @throws IllegalArgumentException {@literal cellField == null or messageKey == null}
+     * @throws IllegalArgumentException {@literal messageKey.length() == 0}
+     */
+    public void error(final CellField<T> cellField, final String messageKey) {
+        error(cellField, messageKey, getMessageVariables(cellField));
+    }
+
+    /**
+     * メッセージキーを指定して、エラー情報を追加します。
+     * @param cellField フィールド情報
+     * @param messageKey メッセージキー
+     * @param messageVariables メッセージ中の変数
+     * @throws IllegalArgumentException {@literal cellField == null or messageKey == null or messageVariables == null}
+     * @throws IllegalArgumentException {@literal messageKey.length() == 0}
+     */
+    public void error(final CellField<T> cellField, final String messageKey, final Map<String, Object> messageVariables) {
+        ArgUtils.notEmpty(messageKey, "messageKey");
+        ArgUtils.notNull(cellField, "cellField");
+        ArgUtils.notNull(messageVariables, "messageVariables");
+
+        cellField.rejectValue(messageKey, messageVariables);
+
+    }
+
 }

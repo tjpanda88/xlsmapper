@@ -1,73 +1,254 @@
 package com.gh.mygreen.xlsmapper.validation;
 
-import java.awt.Point;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
-import java.util.Map;
+import java.util.Optional;
 import java.util.Stack;
+import java.util.stream.Collectors;
 
-import com.gh.mygreen.xlsmapper.Utils;
+import com.gh.mygreen.xlsmapper.util.PropertyTypeNavigator;
+import com.gh.mygreen.xlsmapper.util.PropertyValueNavigator;
+import com.gh.mygreen.xlsmapper.util.Utils;
+import com.gh.mygreen.xlsmapper.validation.fieldvalidation.FieldFormatter;
+import com.gh.mygreen.xlsmapper.validation.fieldvalidation.FieldFormatterRegistry;
+import com.github.mygreen.cellformatter.lang.ArgUtils;
 
 
 /**
- * シートのエラー情報を処理するためのクラス。
+ * 1シート分のエラー情報を管理するクラス。
  * 
- * @version 0.5
+ * @param <P> シートにマッピングするクラスタイプ
+ * @version 2.0
  * @author T.TSUCHIE
  *
  */
-public class SheetBindingErrors {
+public class SheetBindingErrors<P> {
     
     /** パスの区切り文字 */
     public static final String PATH_SEPARATOR = ".";
     
-    /** シート名 */
-    private String sheetName;
+    /**
+     * 検証対象のオブジェクト。
+     * ・ルートオブジェクト
+     */
+    private final P target;
     
-    /** オブジェクト名 */
+    /**
+     * オブジェクト名
+     */
     private final String objectName;
     
-    /** 現在のパス。キャッシュ用。 */
+    /**
+     * シート名
+     */
+    private String sheetName;
+    
+    /**
+     * シートのインデックス
+     */
+    private int sheetIndex = -1;
+    
+    /**
+     * 現在のパス。
+     * キャッシュ用。
+     */
     private String currentPath;
     
-    /** 検証対象のオブジェクトの現在のパス */
-    private Stack<String> nestedPathStack = new Stack<String>();
+    /** 
+     * 検証対象のオブジェクトの現在のパス
+     */
+    private Stack<String> nestedPathStack = new Stack<>();
     
-    /** エラーオブジェクト */
-    private final List<ObjectError> errors = new ArrayList<ObjectError>();
+    /**
+     * エラーオブジェクト
+     */
+    private final List<ObjectError> errors = new ArrayList<>();
+    
+    /**
+     * フィールドの値のフォーマッタの管理クラス
+     */
+    private FieldFormatterRegistry fieldFormatterRegistry = new FieldFormatterRegistry();
     
     /** エラーコードの候補を生成するクラス */
     private MessageCodeGenerator messageCodeGenerator = new MessageCodeGenerator();
     
-    public String getObjectName() {
-        return objectName;
+    /**
+     * プロパティ式から、値を取得する。
+     * ・private/protectedなどのフィールドにもアクセス可能にする。
+     */
+    private final PropertyValueNavigator propertyValueNavigator = new PropertyValueNavigator();
+    {
+        propertyValueNavigator.setAllowPrivate(true);
+        propertyValueNavigator.setIgnoreNull(true);
+        propertyValueNavigator.setIgnoreNotFoundKey(true);
+        propertyValueNavigator.setCacheWithPath(true);
+    }
+    
+    /**
+     * プロパティ式から、クラスタイプを取得する。
+     * ・private/protectedなどのフィールドにもアクセス可能にする。
+     */
+    private final PropertyTypeNavigator propertyTypeNavigator = new PropertyTypeNavigator();
+    {
+        propertyTypeNavigator.setAllowPrivate(true);
+        propertyTypeNavigator.setIgnoreNotResolveType(true);
+        propertyTypeNavigator.setCacheWithPath(true);
     }
     
     /**
      * オブジェクト名を指定しするコンストラクタ。
      * <p>エラーメッセージを組み立てる際に、パスのルートとなる。
+     * @param target 検証対象のオブジェクト
      * @param objectName オブジェクト名
      */
-    public SheetBindingErrors(final String objectName) {
+    public SheetBindingErrors(final P target, final String objectName) {
+        
+        this.target = target;
         this.objectName = objectName;
+        
+        this.fieldFormatterRegistry.init();
     }
     
     /**
      * クラス名をオブジェクト名とするコンストラクタ。
-     * @param clazz クラス名
+     * <p>オブジェクト名として、{@link Class#getCanonicalName()}を設定します。</p>
+     * @param target 検証対象のオブジェクト
+     * @throws IllegalArgumentException {@link target == null.}
      */
-    public SheetBindingErrors(final Class<?> clazz) {
-        this(clazz.getCanonicalName());
+    public SheetBindingErrors(final P target) {
+        this(target, target.getClass().getCanonicalName());
+    }
+    
+    /**
+     * 検証対象のオブジェクトを取得する。
+     * @return
+     */
+    public P getTarget() {
+        return target;
+    }
+    
+    /**
+     * 現在のオブジェクト名称を取得する
+     * @return コンストラクタで設定したオブジェクト名称。
+     */
+    public String getObjectName() {
+        return objectName;
+    }
+    
+    /**
+     * 現在のシート名を取得する。
+     * @return シート名称
+     */
+    public String getSheetName() {
+        return sheetName;
+    }
+    
+    /**
+     * 現在のシート名を設定します。
+     * @param sheetName シートの名称
+     */
+    public void setSheetName(final String sheetName) {
+        this.sheetName = sheetName;
+    }
+    
+    /**
+     * シート番号を取得する
+     * @return 0から始まる。ただし、シートが設定されていない状態の時は、-1を返す。
+     */
+    public int getSheetIndex() {
+        return sheetIndex;
+    }
+    
+    /**
+     * シート番号を設定する
+     * @param sheetIndex シート番号(0から始まる)
+     */
+    public void setSheetIndex(int sheetIndex) {
+        this.sheetIndex = sheetIndex;
+    }
+    
+    /**
+     * 指定したパスのフィールドのクラスタイプを取得する。
+     * @since 2.0
+     * @param field フィールド名
+     * @return クラスタイプ。ただし、リストなどGenericsのタイプが指定されていない場合、クラスタイプもnullとなる。
+     */
+    public Class<?> getFieldType(final String field) {
+        
+        final String fieldPath = buildFieldPath(field);
+        Class<?> type = propertyTypeNavigator.getPropertyType(target.getClass(), fieldPath);
+        if(type != null) {
+            return type;
+        }
+        
+        return getActualFieldType(fieldPath);
+    }
+    
+    /**
+     * 指定したパスのフィールドのクラスタイプを取得する。
+     * <p>インスタンスを元に取得するため、サブクラスの可能性がある。</p>
+     * @since 2.0
+     * @param field フィールド名
+     * @return クラスタイプ。ただし、オブジェクトの値がnullの場合は、クラスタイプもnullとなる。
+     */
+    public Class<?> getActualFieldType(final String field) {
+        
+        final Object fieldValue = getFieldValue(field);
+        return fieldValue == null ? null : fieldValue.getClass();
+        
+    }
+    
+    /**
+     * 指定したパスのフィールドの値を取得する。
+     * <p>フィールドエラーにエラーが存在するときは、エラーオブジェクトから値を取得し、存在しない場合は、実際の値を取得する。</p>
+     * @param field フィールド名
+     * @return フィールドの値。
+     */
+    public Object getFieldValue(final String field) {
+        
+        final FieldError error = getFirstFieldError(field).orElse(null);
+        if(error != null && !error.isConversionFailure()) {
+            return error.getRejectedValue();
+        } else {
+            return getFieldActualValue(field);
+        }
+        
+    }
+    
+    /**
+     * 指定したパスのフィールドの値を取得する。
+     * @since 2.0
+     * @param field フィールド名
+     * @return フィールドの値。
+     */
+    public Object getFieldActualValue(final String field) {
+        final String fieldPath = buildFieldPath(field);
+        return propertyValueNavigator.getProperty(target, fieldPath);
+    }
+    
+    /**
+     * 現在のパス上のプロパティの値を取得します。
+     * <p>{@link #getTarget()}で取得できるルートオブジェクトに対して、{@link #getCurrentPath()}のパスで示された値を取得します。</p>
+     * @return 現在のパス上の値。
+     */
+    public Object getValue() {
+        final String currentPath = getCurrentPath();
+        if(Utils.isEmpty(currentPath)) {
+            return target;
+        } else {
+            return propertyValueNavigator.getProperty(target, currentPath);
+        }
     }
     
     /**
      * 指定したパスで現在のパスを初期化します。
      * <p>nullまたは空文字を与えると、トップに移動します。
-     * @param nestedPath
+     * @param nestedPath ネストするパス
      */
     public void setNestedPath(final String nestedPath) {
-        final String canonicalPath = getCanonicalPath(nestedPath);
+        final String canonicalPath = normalizePath(nestedPath);
         this.nestedPathStack.clear();
         if(canonicalPath.isEmpty()) {
             this.currentPath = buildPath();
@@ -77,22 +258,23 @@ public class SheetBindingErrors {
     }
     
     /**
-     * パスのルートに移動します。
+     * 現在のパスをルートに移動します。
      */
     public void setRootPath() {
         setNestedPath(null);
     }
     
     /**
-     * パスを標準化する。
+     * パスを正規化する。
      * <ol>
-     *  <li>トリムする。
-     *  <li>値がnullの場合は、空文字を返す。
-     *  <li>最後に'.'がついている場合、除去する。
+     *  <li>トリムする。</li>
+     *  <li>値がnullの場合は、空文字を返す。</li>
+     *  <li>最後に'.'がついている場合、除去する。</li>
+     * </ol>
      * @param subPath
      * @return
      */
-    private String getCanonicalPath(final String subPath) {
+    private String normalizePath(final String subPath) {
         if(subPath == null) {
             return "";
         }
@@ -116,42 +298,49 @@ public class SheetBindingErrors {
     
     /**
      * パスを１つ下位に移動します。
-     * @param subPath
+     * @param subPath ネストするパス
      * @throws IllegalArgumentException subPath is empty.
      */
     public void pushNestedPath(final String subPath) {
-        final String canonicalPath = getCanonicalPath(subPath);
-        if(canonicalPath.isEmpty()) {
-            throw new IllegalArgumentException(String.format("subPath is invalid path : '%s'", subPath));
-        }
+        final String canonicalPath = normalizePath(subPath);
+        ArgUtils.notEmpty(canonicalPath, "canonicalPath");
+        
         this.nestedPathStack.push(canonicalPath);
         this.currentPath = buildPath();
     }
     
     /**
-     * インデックス付きのパスを１つ下位に移動します。
-     * @param subPath
-     * @param index
-     * @throws IllegalArgumentException subPath is empty.
+     * 配列やリストなどのインデックス付きのパスを１つ下位に移動します。
+     * @param subPath ネストするパス
+     * @param index インデックス番号(0から始まります。)
+     * @throws IllegalArgumentException {@literal subPath is empty or index < 0}
      */
     public void pushNestedPath(final String subPath, final int index) {
-        pushNestedPath(String.format("%s[%d]", subPath, index));
+        final String canonicalPath = normalizePath(subPath);
+        ArgUtils.notEmpty(subPath, "subPath");
+        ArgUtils.notMin(index, -1, "index");
+        
+        pushNestedPath(String.format("%s[%d]", canonicalPath, index));
     }
     
     /**
-     * キー付きのパスを１つ下位に移動します。
-     * @param subPath
-     * @param key
-     * @throws IllegalArgumentException subPath is empty.
+     * マップなどのキー付きのパスを１つ下位に移動します。
+     * @param subPath ネストするパス
+     * @param key マップのキー
+     * @throws IllegalArgumentException {@literal subPath is empty or key is empty}
      */
     public void pushNestedPath(final String subPath, final String key) {
-        pushNestedPath(String.format("%s[%s]", subPath, key));
+        final String canonicalPath = normalizePath(subPath);
+        ArgUtils.notEmpty(subPath, "subPath");
+        ArgUtils.notEmpty(key, "key");
+        
+        pushNestedPath(String.format("%s[%s]", canonicalPath, key));
     }
     
     /**
      * パスを１つ上位に移動します。
-     * @return 
-     * @throws IllegalStateException path stask is empty.
+     * @return 現在のパスを返しまます。
+     * @throws IllegalStateException {@literal パスがこれ以上移動できない場合}
      */
     public String popNestedPath() {
         
@@ -165,9 +354,9 @@ public class SheetBindingErrors {
     }
     
     /**
-     * パスを組み立てる。
-     * <p>ルートの時は空文字を返します。
-     * @return
+     * 現在パスのスタックに積まれているパスを結合し、１つに組み立てる。
+     * <p>ルートの時は空文字を返します。</p>
+     * @return 結合したパス
      */
     private String buildPath() {
         return Utils.join(nestedPathStack, PATH_SEPARATOR);
@@ -175,8 +364,8 @@ public class SheetBindingErrors {
     
     /**
      * 現在のパスを取得します。
-     * <p>ルートの時は空文字を返します。
-     * @return
+     * <p>ルートの時は空文字を返します。</p>
+     * @return 現在のパス
      */
     public String getCurrentPath() {
         return currentPath;
@@ -184,8 +373,9 @@ public class SheetBindingErrors {
     
     /**
      * 現在のパスに引数で指定したフィールド名を追加した値を返す。
-     * @param fieldName
-     * @return
+     * <p>現在のパスが空の場合は、フィールド名を返す。</p>
+     * @param fieldName フィールド名
+     * @return フィールド名を追加したパス
      */
     public String buildFieldPath(final String fieldName) {
         if(Utils.isEmpty(getCurrentPath())) {
@@ -196,7 +386,7 @@ public class SheetBindingErrors {
     }
     
     /**
-     * 全てのエラーをリセットする。
+     * 全てのエラーをクリアする。
      * @since 0.5
      */
     public void clearAllErrors() {
@@ -204,27 +394,31 @@ public class SheetBindingErrors {
     }
     
     /**
-     * エラーを追加する
-     * @param error
+     * エラー情報を追加する
+     * @param error エラー情報
+     * @throws IllegalArgumentException {@literal error == null.}
      */
     public void addError(final ObjectError error) {
+        ArgUtils.notNull(error, "error");
         this.errors.add(error);
     }
     
     /**
-     * エラーを全て追加する。
-     * @param errors
+     * エラー情報を全て追加する。
+     * @param errors エラー情報
+     * @throws IllegalArgumentException {@literal errors == null.}
      */
     public void addAllErrors(final Collection<ObjectError> errors) {
+        ArgUtils.notNull(errors, "errors");
         this.errors.addAll(errors);
     }
     
     /**
-     * 全てのエラーを取得する
-     * @return
+     * 全てのエラー情報を取得する
+     * @return 全てのエラー情報
      */
     public List<ObjectError> getAllErrors() {
-        return new ArrayList<ObjectError>(errors);
+        return new ArrayList<>(errors);
     }
     
     /**
@@ -232,7 +426,7 @@ public class SheetBindingErrors {
      * @return true:エラーがある。
      */
     public boolean hasErrors() {
-        return !getAllErrors().isEmpty();
+        return errors.size() > 0;
     }
     
     /**
@@ -240,87 +434,36 @@ public class SheetBindingErrors {
      * @return エラーがない場合は空のリストを返す
      */
     public List<ObjectError> getGlobalErrors() {
-        final List<ObjectError> list = new ArrayList<ObjectError>();
-        for(ObjectError item : this.errors) {
-            if(!(item instanceof FieldError)) {
-                list.add(item);
-            }
-        }
-        
-        return list;
+        return errors.stream()
+                .filter(e -> !(e instanceof FieldError))
+                .collect(Collectors.toList());
     }
     
     /**
      * 先頭のグローバルエラーを取得する。
-     * @return 存在しない場合は、nullを返す。
+     * @return 存在しない場合は、空を返す。
      */
-    public ObjectError getFirstGlobalError() {
-        for(ObjectError item : this.errors) {
-            if(!(item instanceof FieldError)) {
-                return item;
-            }
-        }
+    public Optional<ObjectError> getFirstGlobalError() {
+        return errors.stream()
+                .filter(e -> !(e instanceof FieldError))
+                .findFirst();
         
-        return null;
     }
     
     /**
      * グローバルエラーがあるか確かめる。
-     * @return
+     * @return true:グローバルエラーがある。
      */
     public boolean hasGlobalErrors() {
-        return !getGlobalErrors().isEmpty();
+        return getFirstGlobalError().isPresent();
     }
     
     /**
      * グローバルエラーの件数を取得する
-     * @return
+     * @return エラーの件数
      */
     public int getGlobalErrorCount() {
         return getGlobalErrors().size();
-    }
-    
-    /**
-     * グローバルエラーを取得する
-     * @return エラーがない場合は空のリストを返す
-     */
-    public List<SheetObjectError> getSheetGlobalErrors() {
-        final List<SheetObjectError> list = new ArrayList<SheetObjectError>();
-        for(ObjectError item : this.errors) {
-            if(item instanceof SheetObjectError) {
-                list.add((SheetObjectError) item);
-            }
-        }
-        
-        return list;
-    }
-    
-    /**
-     * 先頭のグローバルエラーを取得する。
-     * @return 存在しない場合は、nullを返す。
-     */
-    public SheetObjectError getFirstSheetGlobalError() {
-        for(SheetObjectError item : getSheetGlobalErrors()) {
-            return (SheetObjectError)item;
-        }
-        
-        return null;
-    }
-    
-    /**
-     * シートに関するグローバルエラーがあるか確かめる。
-     * @return true:シートに関するグローバルエラー。
-     */
-    public boolean hasSheetGlobalErrors() {
-        return !getSheetGlobalErrors().isEmpty();
-    }
-    
-    /**
-     * シートに関するグローバルエラーの件数を取得する。
-     * @return
-     */
-    public int getSheetGlobalErrorCount() {
-        return getSheetGlobalErrors().size();
     }
     
     /**
@@ -328,28 +471,23 @@ public class SheetBindingErrors {
      * @return エラーがない場合は空のリストを返す
      */
     public List<FieldError> getFieldErrors() {
-        final List<FieldError> list = new ArrayList<FieldError>();
-        for(ObjectError item : this.errors) {
-            if(item instanceof FieldError) {
-                list.add((FieldError) item);
-            }
-        }
+        return errors.stream()
+                .filter(e -> e instanceof FieldError)
+                .map(e -> (FieldError)e)
+                .collect(Collectors.toList());
         
-        return list;
     }
     
     /**
      * 先頭のフィールドエラーを取得する
-     * @return エラーがない場合は空のリストを返す
+     * @return エラーがない場合は空を返す
      */
-    public FieldError getFirstFieldError() {
-        for(ObjectError item : this.errors) {
-            if(item instanceof FieldError) {
-                return (FieldError) item;
-            }
-        }
+    public Optional<FieldError> getFirstFieldError() {
+        return errors.stream()
+                .filter(e -> e instanceof FieldError)
+                .map(e -> (FieldError)e)
+                .findFirst();
         
-        return null;
     }
     
     /**
@@ -357,48 +495,44 @@ public class SheetBindingErrors {
      * @return true:フィールドエラーを持つ。
      */
     public boolean hasFieldErrors() {
-        return !getFieldErrors().isEmpty();
+        return getFirstFieldError().isPresent();
     }
     
     /**
      * フィールドエラーの件数を取得する。
-     * @return
+     * @return フィールドエラーの件数
      */
     public int getFieldErrorCount() {
         return getFieldErrors().size();
     }
     
     /**
-     * パスを指定してフィールドエラーを取得する
-     * @param path 最後に'*'を付けるとワイルドカードが指定可能。
-     * @return
-     */
-    public List<FieldError> getFieldErrors(final String path) {
-        final String fullPath = buildFieldPath(path);
-        final List<FieldError> list = new ArrayList<FieldError>();
-        for(ObjectError item : this.errors) {
-            if(item instanceof FieldError && isMatchingFieldError(fullPath, (FieldError) item)) {
-                list.add((FieldError) item);
-            }
-        }
-        
-        return list;
-    }
-    
-    /**
-     * パスを指定して先頭のフィールドエラーを取得する
+     * パスを指定してフィールドエラーを取得する。
+     * <p>検索する際には、引数「path」に現在のパス({@link #getCurrentPath()})を付与して処理します。</p>
      * @param path 最後に'*'を付けるとワイルドカードが指定可能。
      * @return エラーがない場合は空のリストを返す
      */
-    public FieldError getFirstFieldError(final String path) {
+    public List<FieldError> getFieldErrors(final String path) {
         final String fullPath = buildFieldPath(path);
-        for(ObjectError item : this.errors) {
-            if(item instanceof FieldError && isMatchingFieldError(fullPath, (FieldError) item)) {
-                return (FieldError) item;
-            }
-        }
         
-        return null;
+        return getFieldErrors().stream()
+                .filter(e -> isMatchingFieldError(fullPath, e))
+                .collect(Collectors.toList());
+        
+    }
+    
+    /**
+     * パスを指定して先頭のフィールドエラーを取得する。
+     * <p>検索する際には、引数「path」に現在のパス({@link #getCurrentPath()})を付与して処理します。</p>
+     * @param path 最後に'*'を付けるとワイルドカードが指定可能。
+     * @return エラーがない場合は空を返す
+     */
+    public Optional<FieldError> getFirstFieldError(final String path) {
+        final String fullPath = buildFieldPath(path);
+        return getFieldErrors().stream()
+                .filter(e -> isMatchingFieldError(fullPath, e))
+                .findFirst();
+        
     }
     
     /**
@@ -407,7 +541,7 @@ public class SheetBindingErrors {
      * @return true:エラーがある場合。
      */
     public boolean hasFieldErrors(final String path) {
-        return !getFieldErrors(path).isEmpty();
+        return getFirstFieldError(path).isPresent();
     }
     
     /**
@@ -420,697 +554,158 @@ public class SheetBindingErrors {
     }
     
     /**
-     * セルのフィールドエラーを取得する
-     * @return エラーがない場合は空のリストを返す
-     */
-    public List<CellFieldError> getCellFieldErrors() {
-        final List<CellFieldError> list = new ArrayList<CellFieldError>();
-        for(ObjectError item : this.errors) {
-            if(item instanceof CellFieldError) {
-                list.add((CellFieldError) item);
-            }
-        }
-        
-        return list;
-    }
-    
-    /**
-     * 先頭のセルフィールドエラーを取得する
-     * @return エラーがない場合は空のリストを返す
-     */
-    public CellFieldError getCellFirstFieldError() {
-        for(ObjectError item : this.errors) {
-            if(item instanceof CellFieldError) {
-                return (CellFieldError) item;
-            }
-        }
-        
-        return null;
-    }
-    
-    /**
-     * セルフィールドエラーが存在するか確かめる。
-     * @return true:フィールドエラーを持つ。
-     */
-    public boolean hasCellFieldErrors() {
-        return !getCellFieldErrors().isEmpty();
-    }
-    
-    /**
-     * セルフィールドエラーの件数を取得する。
-     * @return
-     */
-    public int getCellFieldErrorCount() {
-        return getCellFieldErrors().size();
-    }
-    
-    /**
-     * パスを指定してセルフィールドエラーを取得する
-     * @param path 最後に'*'を付けるとワイルドカードが指定可能。
-     * @return
-     */
-    public List<CellFieldError> getCellFieldErrors(final String path) {
-        final String fullPath = buildFieldPath(path);
-        final List<CellFieldError> list = new ArrayList<CellFieldError>();
-        for(ObjectError item : this.errors) {
-            if(item instanceof CellFieldError && isMatchingFieldError(fullPath, (CellFieldError) item)) {
-                list.add((CellFieldError) item);
-            }
-        }
-        
-        return list;
-    }
-    
-    /**
-     * パスを指定して先頭のセルフィールドエラーを取得する
-     * @param path 最後に'*'を付けるとワイルドカードが指定可能。
-     * @return エラーがない場合はnullを返す。
-     */
-    public CellFieldError getFirstCellFieldError(final String path) {
-        final String fullPath = buildFieldPath(path);
-        for(ObjectError item : this.errors) {
-            if(item instanceof CellFieldError && isMatchingFieldError(fullPath, (CellFieldError) item)) {
-                return (CellFieldError) item;
-            }
-        }
-        
-        return null;
-    }
-    
-    /**
-     * 先頭のセルフィールドエラーを取得する
-     * @return エラーがない場合はnullを返す。
-     */
-    public CellFieldError getFirstCellFieldError() {
-        for(ObjectError item : this.errors) {
-            if(item instanceof CellFieldError) {
-                return (CellFieldError) item;
-            }
-        }
-        
-        return null;
-    }
-    
-    /**
-     * 指定したパスのセルフィィールドエラーが存在するか確かめる。
-     * @param path 最後に'*'を付けるとワイルドカードが指定可能。
-     * @return true:エラーがある場合。
-     */
-    public boolean hasCellFieldErrors(final String path) {
-        return !getCellFieldErrors(path).isEmpty();
-    }
-    
-    /**
-     * 指定したパスのセルフィィールドエラーの件数を取得する。
-     * @param path 最後に'*'を付けるとワイルドカードが指定可能。
-     * @return
-     */
-    public int getCellFieldErrorCount(final String path) {
-        return getCellFieldErrors(path).size();
-    }
-    
-    /**
      * 指定したパスがフィールドエラーのパスと一致するかチェックするかどうか。
-     * @param path 
-     * @param fieldError
+     * @param path パス
+     * @param fieldError フィールドエラー
      * @return true: 一致する場合。
      */
-    protected boolean isMatchingFieldError(final String path, final FieldError fieldError) {
+    private boolean isMatchingFieldError(final String path, final FieldError fieldError) {
         
-        if (fieldError.getFieldPath().equals(path)) {
+        if (fieldError.getField().equals(path)) {
             return true;
         }
         
         if(path.endsWith("*")) {
             String subPath = path.substring(0, path.length()-1);
-            return fieldError.getFieldPath().startsWith(subPath);
+            return fieldError.getField().startsWith(subPath);
         }
         
         return false;
     }
     
     /**
-     * 現在のシート名を取得する。
-     * @return
-     */
-    public String getSheetName() {
-        return sheetName;
-    }
-    
-    /**
-     * 現在のシート名を設定します。
-     * @param sheetName
-     * @return
-     */
-    public SheetBindingErrors setSheetName(final String sheetName) {
-        this.sheetName = sheetName;
-        return this;
-    }
-    
-    /**
-     * エラーコードを指定してグローバルエラーを登録します。
+     * グローバルエラーのビルダーを作成します。
      * @param errorCode エラーコード
+     * @return {@link ObjectError}のインスタンスを組み立てるビルダクラス。
      */
-    public void reject(final String errorCode) {
-        addError(new ObjectError(
-                getObjectName(),
-                getMessageCodeGenerator().generateCodes(errorCode, getObjectName(), null, null), new Object[]{}));
+    public InternalObjectErrorBuilder createGlobalError(final String errorCode) {
+        return createGlobalError(new String[]{errorCode});
     }
     
     /**
-     * エラーコードとデフォルトメッセージを指定してグローバルエラーを登録します。
+     * グローバルエラーのビルダーを作成します。
+     * @param errorCodes エラーコード。先頭の要素が優先されます。
+     * @return {@link ObjectError}のインスタンスを組み立てるビルダクラス。
+     */
+    public InternalObjectErrorBuilder createGlobalError(final String[] errorCodes) {
+        
+        String[] codes = new String[0];
+        for(String errorCode : errorCodes) {
+            codes = Utils.concat(codes, generateMessageCodes(errorCode));
+        }
+        
+        return new InternalObjectErrorBuilder(this, getObjectName(), codes)
+                .sheetName(getSheetName());
+    }
+    
+    /**
+     * フィールドエラーのビルダーを作成します。
+     * @param field フィールドパス。
      * @param errorCode エラーコード
-     * @param defaultMessage デフォルトメッセージ。指定したエラーコードに対するメッセージが見つからないときに使用する値です。
+     * @return {@link FieldError}のインスタンスを組み立てるビルダクラス。
      */
-    public void reject(final String errorCode, final String defaultMessage) {
-        addError(new ObjectError(
-                getObjectName(),
-                getMessageCodeGenerator().generateCodes(errorCode, getObjectName(), null, null), new Object[]{})
-            .setDefaultMessage(defaultMessage));
+    public InternalFieldErrorBuilder createFieldError(final String field, final String errorCode) {
+        
+        return createFieldError(field, new String[]{errorCode});
+        
     }
     
     /**
-     * エラーコードとメッセージ引数の値を指定してグローバルエラーを登録します。
-     * <p>メッセージ中の変数はインデックス形式で指定する必要がります。
-     * @param errorCode エラーコード
-     * @param errorArgs メッセージ引数。
-     */
-    public void reject(final String errorCode, final Object[] errorArgs) {
-        addError(new ObjectError(
-                getObjectName(),
-                getMessageCodeGenerator().generateCodes(errorCode, getObjectName(), null, null), errorArgs));
-    }
-    
-    /**
-     * エラーコードとメッセージ引数の値を指定してグローバルエラーを登録します。
-     * @param errorCode エラーコード
-     * @param errorArgs メッセージ引数。
-     * @param defaultMessage デフォルトメッセージ。指定したエラーコードに対するメッセージが見つからないときに使用する値です。
-     */
-    public void reject(final String errorCode, final Object[] errorArgs, final String defaultMessage) {
-        addError(new ObjectError(
-                getObjectName(),
-                getMessageCodeGenerator().generateCodes(errorCode, getObjectName(), null, null), errorArgs)
-                .setDefaultMessage(defaultMessage));
-    }
-    
-    /**
-     * エラーコードとメッセージ変数の値を指定してグローバルエラーを登録します。
-     * @param errorCode エラーコード
-     * @param errorVars メッセージ変数。
-     */
-    public void reject(final String errorCode, final Map<String, Object> errorVars) {
-        addError(new ObjectError(
-                getObjectName(),
-                generateMessageCodes(errorCode), errorVars));
-    }
-    
-    /**
-     * エラーコードとメッセージ変数の値を指定してグローバルエラーを登録します。
-     * @param errorCode エラーコード
-     * @param errorVars メッセージ変数。
-     * @param defaultMessage デフォルトメッセージ。指定したエラーコードに対するメッセージが見つからないときに使用する値です。
-     */
-    public void reject(final String errorCode, final Map<String, Object> errorVars, final String defaultMessage) {
-        addError(new ObjectError(
-                getObjectName(),
-                generateMessageCodes(errorCode), errorVars)
-            .setDefaultMessage(defaultMessage));
-    }
-    
-    /**
-     * エラーコードを指定してシートのグローバルエラーを登録します。
-     * @param errorCode エラーコード。
-     */
-    public void rejectSheet(final String errorCode) {
-        addError(new SheetObjectError(
-                getObjectName(),
-                getMessageCodeGenerator().generateCodes(errorCode, getObjectName(), null, null), new Object[]{},
-           getSheetName()));
-    }
-    
-    /**
-     * エラーコードとデフォルトメッセージを指定してシートのグローバルエラーを登録します。
-     * @param errorCode エラーコード。
-     * @param defaultMessage デフォルトメッセージ。指定したエラーコードに対するメッセージが見つからないときに使用する値です。
-     */
-    public void rejectSheet(final String errorCode, final String defaultMessage) {
-        addError(new SheetObjectError(
-                getObjectName(),
-                getMessageCodeGenerator().generateCodes(errorCode, getObjectName(), null, null), new Object[]{},
-                getSheetName())
-            .setDefaultMessage(defaultMessage));
-    }
-    
-    /**
-     * エラーコードとメッセージ引数を指定してシートのグローバルエラーを登録します。
-     * <p>メッセージ中の変数はインデックス形式で指定する必要がります。
-     * @param errorCode エラーコード
-     * @param errorArgs メッセージ引数
-     */
-    public void rejectSheet(final String errorCode, final Object[] errorArgs) {
-        addError(new SheetObjectError(
-                getObjectName(),
-                getMessageCodeGenerator().generateCodes(errorCode, getObjectName(), null, null), errorArgs,
-            getSheetName()));
-    }
-    
-    /**
-     * エラーコードとメッセージ引数を指定してシートのグローバルエラーを登録します。
-     * <p>メッセージ中の変数はインデックス形式で指定する必要がります。
-     * @param errorCode エラーコード
-     * @param errorArgs メッセージ引数
-     * @param defaultMessage デフォルトメッセージ。指定したエラーコードに対するメッセージが見つからないときに使用する値です。
-     */
-    public void rejectSheet(final String errorCode, final Object[] errorArgs, final String defaultMessage) {
-        addError(new SheetObjectError(
-                getObjectName(),
-                getMessageCodeGenerator().generateCodes(errorCode, getObjectName(), null, null), errorArgs,
-                getSheetName())
-            .setDefaultMessage(defaultMessage));
-    }
-    
-    /**
-     * エラーコードとメッセージ変数を指定してシートのグローバルエラーを登録します。
-     * @param errorCode エラーコード
-     * @param errorVars メッセージ変数
-     */
-    public void rejectSheet(final String errorCode, final Map<String, Object> errorVars) {
-        addError(new SheetObjectError(
-                getObjectName(),
-                generateMessageCodes(errorCode), errorVars,
-                getSheetName()));
-    }
-    
-    /**
-     * エラーコードとメッセージ変数を指定してシートのグローバルエラーを登録します。
-     * @param errorCode エラーコード
-     * @param errorVars メッセージ変数
-     * @param defaultMessage デフォルトメッセージ。指定したエラーコードに対するメッセージが見つからないときに使用する値です。
-     */
-    public void rejectSheet(final String errorCode, final Map<String, Object> errorVars, final String defaultMessage) {
-        addError(new SheetObjectError(
-                getObjectName(),
-                generateMessageCodes(errorCode), errorVars,
-                getSheetName())
-            .setDefaultMessage(defaultMessage));
-    }
-    
-    /**
-     * エラーコードを指定してフィールドエラーを登録します。
+     * フィールドエラーのビルダーを作成します。
      * @param field フィールドパス。
-     * @param errorCode エラーコード。
+     * @param errorCodes エラーコード。先頭の要素が優先されます。
+     * @return {@link FieldError}のインスタンスを組み立てるビルダクラス。
      */
-    public void rejectValue(final String field, final String errorCode) {
-        addError(FieldErrorBuilder.create()
-                .objectName(getObjectName()).fieldPath(buildFieldPath(field))
-                .codes(generateMessageCodes(errorCode, field))
-                .build());
+    public InternalFieldErrorBuilder createFieldError(final String field, final String[] errorCodes) {
+        
+        final String fieldPath = buildFieldPath(field);
+        final Class<?> fieldType = getFieldType(field);
+        final Object fieldValue = getFieldValue(field);
+        
+        String[] codes = new String[0];
+        for(String errorCode : errorCodes) {
+            codes = Utils.concat(codes, generateMessageCodes(errorCode, fieldPath, fieldType));
+        }
+        
+        return new InternalFieldErrorBuilder(this, getObjectName(), fieldPath, codes)
+                .sheetName(getSheetName())
+                .rejectedValue(fieldValue);
+                
     }
     
     /**
-     * エラーコードを指定してフィールドエラーを登録します。
+     * 型変換失敗時のフィールエラー用のビルダを作成します。
      * @param field フィールドパス。
-     * @param errorCode エラーコード。
-     * @param defaultMessage デフォルトメッセージ。指定したエラーコードに対するメッセージが見つからないときに使用する値です。
+     * @param fieldType フィールドのクラスタイプ
+     * @param rejectedValue 型変換に失敗した値
+     * @return {@link FieldError}のインスタンスを組み立てるビルダクラス。
      */
-    public void rejectValue(final String field, final String errorCode, final String defaultMessage) {
-        addError(FieldErrorBuilder.create()
-                .objectName(getObjectName()).fieldPath(buildFieldPath(field))
-                .codes(generateMessageCodes(errorCode, field))
-                .defaultMessage(defaultMessage)
-                .build());
+    public InternalFieldErrorBuilder createFieldConversionError(final String field, final Class<?> fieldType, final Object rejectedValue) {
+        
+        final String fieldPath = buildFieldPath(field);
+        final String[] codes = messageCodeGenerator.generateTypeMismatchCodes(getObjectName(), fieldPath, fieldType);
+        
+        return new InternalFieldErrorBuilder(this, getObjectName(), fieldPath, codes)
+                .sheetName(getSheetName())
+                .rejectedValue(rejectedValue)
+                .conversionFailure(true);
+        
+        
     }
     
     /**
-     * エラーコードとメッセージ引数を指定してフィールドエラーを登録します。
-     * <p>メッセージ中の変数はインデックス形式で指定する必要がります。
-     * @param field フィールドパス。
-     * @param errorCode エラーコード。
-     * @param errorArgs メッセージ引数。
+     * フィールドに対するフォーマッタを登録する。
+     * @since 2.0
+     * @param field フィールド名
+     * @param fieldType フィールドのクラスタイプ
+     * @param formatter フォーマッタ
      */
-    public void rejectValue(final String field, final String errorCode, final Object[] errorArgs) {
-        addError(FieldErrorBuilder.create()
-                .objectName(getObjectName()).fieldPath(buildFieldPath(field))
-                .codes(generateMessageCodes(errorCode, field), errorArgs)
-                .build());
+    public void registerFieldFormatter(final String field, final Class<?> fieldType, final FieldFormatter<?> formatter) {
+        
+        registerFieldFormatter(field, fieldType, formatter, false);
+        
     }
     
     /**
-     * エラーコードとメッセージ引数を指定してフィールドエラーを登録します。
-     * <p>メッセージ中の変数はインデックス形式で指定する必要がります。
-     * @param field フィールドパス。
-     * @param errorCode エラーコード。
-     * @param errorArgs メッセージ引数。
-     * @param defaultMessage デフォルトメッセージ。指定したエラーコードに対するメッセージが見つからないときに使用する値です。
+     * フィールドに対するフォーマッタを登録する。
+     * @since 2.0
+     * @param field フィールド名
+     * @param fieldType フィールドのクラスタイプ
+     * @param formatter フォーマッタ
+     * @param strippedIndex 登録するときにフィールドパスから、インデックス情報を除去するかどうか。
      */
-    public void rejectValue(final String field, final String errorCode, final Object[] errorArgs, final String defaultMessage) {
-        addError(FieldErrorBuilder.create()
-                .objectName(getObjectName()).fieldPath(buildFieldPath(field))
-                .codes(generateMessageCodes(errorCode, field), errorArgs)
-                .defaultMessage(defaultMessage)
-                .build());
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public void registerFieldFormatter(final String field, final Class<?> fieldType, final FieldFormatter<?> formatter,
+            final boolean strippedIndex) {
+        
+        String fieldPath = buildFieldPath(field);
+        
+        if(strippedIndex) {
+            // パスからインデックスやキーを削除する
+            List<String> strippedPaths = new ArrayList<>();
+            fieldFormatterRegistry.addStrippedPropertyPaths(strippedPaths, "", fieldPath);
+            
+            if(strippedPaths.size() > 0) {
+                // 辞書順位並び変えて先頭に来るのが、インデックスを全て削除されたパス
+                Collections.sort(strippedPaths);
+                fieldPath = strippedPaths.get(0);
+            }
+        }
+        
+        fieldFormatterRegistry.registerFormatter(fieldPath, (Class)fieldType, (FieldFormatter)formatter);
+        
     }
     
     /**
-     * エラーコードとメッセージ引数を指定してフィールドエラーを登録します。
-     * @param field フィールドパス。
-     * @param errorCode エラーコード。
-     * @param errorVars メッセージ変数。
+     * フィールドとクラスタイプを指定してフォーマッタを取得する。
+     * @since 2.0
+     * @param field フィールド名
+     * @param fieldType フィールドのクラスタイプ
+     * @return 見つからない場合は、nullを返す。
      */
-    public void rejectValue(final String field, final String errorCode, final Map<String, Object> errorVars) {
-        addError(FieldErrorBuilder.create()
-                .objectName(getObjectName()).fieldPath(buildFieldPath(field))
-                .codes(generateMessageCodes(errorCode, field), errorVars)
-                .build());
-    }
-    
-    /**
-     * エラーコードとメッセージ引数を指定してフィールドエラーを登録します。
-     * @param field フィールドパス。
-     * @param errorCode エラーコード。
-     * @param errorVars メッセージ変数。
-     * @param defaultMessage デフォルトメッセージ。指定したエラーコードに対するメッセージが見つからないときに使用する値です。
-     */
-    public void rejectValue(final String field, final String errorCode, final Map<String, Object> errorVars, final String defaultMessage) {
-        addError(FieldErrorBuilder.create()
-                .objectName(getObjectName()).fieldPath(buildFieldPath(field))
-                .codes(generateMessageCodes(errorCode, field), errorVars)
-                .defaultMessage(defaultMessage)
-                .build());
-    }
-    
-    /**
-     * エラーコードを指定してシートのフィールドエラーを登録します。
-     * @param field フィールドパス。
-     * @param cellAddress セルのアドレス。x座標が列番号です。y座標が行番号です。列番号、行番号は0から始まります。
-     * @param errorCode メッセージコード。
-     */
-    public void rejectSheetValue(final String field, final Point cellAddress, final String errorCode) {
-        addError(FieldErrorBuilder.create()
-                .objectName(getObjectName()).fieldPath(buildFieldPath(field))
-                .codes(generateMessageCodes(errorCode, field))
-                .sheetName(getSheetName()).cellAddress(cellAddress)
-                .build());
-    }
-    
-    /**
-     * エラーコードとメッセージ引数を指定してフィールドエラーを登録します。
-     * @param field フィールドパス。
-     * @param fieldValue フィールドの値。
-     * @param fieldType フィールドのクラスタイプ。
-     * @param errorCode エラーコード。
-     * @param errorVars メッセージ変数。
-     */
-    public void rejectValue(final String field, final Object fieldValue, final Class<?> fieldType,
-            final String errorCode, final Map<String, Object> errorVars) {
-        addError(FieldErrorBuilder.create()
-                .objectName(getObjectName()).fieldPath(buildFieldPath(field))
-                .fieldValue(fieldValue).fieldType(fieldType)
-                .codes(generateMessageCodes(errorCode, field, fieldType), errorVars)
-                .build());
-    }
-    
-    /**
-     * エラーコードを指定してシートのフィールドエラーを登録します。
-     * @param field フィールドパス。
-     * @param fieldValue フィールドの値。
-     * @param fieldType フィールドのクラスタイプ。
-     * @param cellAddress セルのアドレス。x座標が列番号です。y座標が行番号です。列番号、行番号は0から始まります。
-     * @param errorCode メッセージコード。
-     */
-    public void rejectSheetValue(final String field, final Object fieldValue, final Class<?> fieldType,
-            final Point cellAddress, final String errorCode) {
-        addError(FieldErrorBuilder.create()
-                .objectName(getObjectName()).fieldPath(buildFieldPath(field))
-                .fieldValue(fieldValue).fieldType(fieldType)
-                .codes(generateMessageCodes(errorCode, field, fieldType))
-                .sheetName(getSheetName()).cellAddress(cellAddress)
-                .build());
-    }
-    
-    /**
-     * エラーコードを指定してシートのフィールドエラーを登録します。
-     * @param field フィールドパス。
-     * @param fieldValue フィールドの値。
-     * @param fieldType フィールドのクラスタイプ。
-     * @param cellAddress セルのアドレス。x座標が列番号です。y座標が行番号です。列番号、行番号は0から始まります。
-     * @param errorCode メッセージコード。
-     * @param defaultMessage デフォルトメッセージ。指定したエラーコードに対するメッセージが見つからないときに使用する値です。
-     */
-    public void rejectSheetValue(final String field, final Object fieldValue, final Class<?> fieldType,
-            final Point cellAddress, final String errorCode, final String defaultMessage) {
-        addError(FieldErrorBuilder.create()
-                .objectName(getObjectName()).fieldPath(buildFieldPath(field))
-                .fieldValue(fieldValue).fieldType(fieldType)
-                .codes(generateMessageCodes(errorCode, field, fieldType))
-                .sheetName(getSheetName()).cellAddress(cellAddress)
-                .defaultMessage(defaultMessage)
-                .build());
-    }
-    
-    /**
-     * エラーコードとデフォルトメッセージを指定してシートのフィールドエラーを登録します。
-     * @param field フィールドパス。
-     * @param cellAddress セルのアドレス。x座標が列番号です。y座標が行番号です。列番号、行番号は0から始まります。
-     * @param errorCode メッセージコード。
-     * @param defaultMessage デフォルトメッセージ。指定したエラーコードに対するメッセージが見つからないときに使用する値です。
-     */
-    public void rejectSheetValue(final String field, final Point cellAddress, final String errorCode, final String defaultMessage) {
-        addError(FieldErrorBuilder.create()
-                .objectName(getObjectName()).fieldPath(buildFieldPath(field))
-                .codes(generateMessageCodes(errorCode, field))
-                .sheetName(getSheetName()).cellAddress(cellAddress)
-                .defaultMessage(defaultMessage)
-                .build());
-    }
-    
-    /**
-     * エラーコードとメッセージ引数を指定してシートのフィールドエラーを登録します。
-     * <p>メッセージ中の変数はインデックス形式で指定する必要がります。
-     * @param field フィールドパス。
-     * @param cellAddress セルのアドレス。x座標が列番号です。y座標が行番号です。列番号、行番号は0から始まります。
-     * @param errorCode メッセージコード。
-     * @param errorArgs メッセージ変数。
-     */
-    public void rejectSheetValue(final String field, final Point cellAddress, final String errorCode, final Object[] errorArgs) {
-        addError(FieldErrorBuilder.create()
-                .objectName(getObjectName()).fieldPath(buildFieldPath(field))
-                .codes(generateMessageCodes(errorCode, field), errorArgs)
-                .sheetName(getSheetName()).cellAddress(cellAddress)
-                .build());
-    }
-    
-    /**
-     * エラーコードとメッセージ引数を指定してシートのフィールドエラーを登録します。
-     * <p>メッセージ中の変数はインデックス形式で指定する必要がります。
-     * @param field フィールドパス。
-     * @param cellAddress セルのアドレス。x座標が列番号です。y座標が行番号です。列番号、行番号は0から始まります。
-     * @param errorCode メッセージコード。
-     * @param errorArgs メッセージ変数。
-     * @param defaultMessage デフォルトメッセージ。指定したエラーコードに対するメッセージが見つからないときに使用する値です。
-     */
-    public void rejectSheetValue(final String field, final Point cellAddress, final String errorCode, final Object[] errorArgs, final String defaultMessage) {
-        addError(FieldErrorBuilder.create()
-                .objectName(getObjectName()).fieldPath(buildFieldPath(field))
-                .codes(generateMessageCodes(errorCode, field), errorArgs)
-                .sheetName(getSheetName()).cellAddress(cellAddress)
-                .defaultMessage(defaultMessage)
-                .build());
-    }
-    
-    /**
-     * エラーコードとデメッセージ変数を指定してシートのフィールドエラーを登録します。
-     * @param field フィールドパス。
-     * @param cellAddress セルのアドレス。x座標が列番号です。y座標が行番号です。列番号、行番号は0から始まります。
-     * @param errorCode メッセージコード。
-     * @param errorVars メッセージ変数。
-     */
-    public void rejectSheetValue(final String field, final Point cellAddress, final String errorCode, final Map<String, Object> errorVars) {
-        addError(FieldErrorBuilder.create()
-                .objectName(getObjectName()).fieldPath(buildFieldPath(field))
-                .codes(generateMessageCodes(errorCode, field), errorVars)
-                .sheetName(getSheetName()).cellAddress(cellAddress)
-                .build());
-    }
-    
-    /**
-     * エラーコードとメッセージ変数を指定してシートのフィールドエラーを登録します。
-     * @param field フィールドパス。
-     * @param cellAddress セルのアドレス。x座標が列番号です。y座標が行番号です。列番号、行番号は0から始まります。
-     * @param errorCode メッセージコード。
-     * @param errorVars メッセージ変数。
-     * @param defaultMessage デフォルトメッセージ。指定したエラーコードに対するメッセージが見つからないときに使用する値です。
-     */
-    public void rejectSheetValue(final String field, final Point cellAddress, final String errorCode, final Map<String, Object> errorVars, final String defaultMessage) {
-        addError(FieldErrorBuilder.create()
-                .objectName(getObjectName()).fieldPath(buildFieldPath(field))
-                .codes(generateMessageCodes(errorCode, field), errorVars)
-                .sheetName(getSheetName()).cellAddress(cellAddress)
-                .defaultMessage(defaultMessage)
-                .build());
-    }
-    
-    /**
-     * エラーコードとメッセージ引数を指定してシートのフィールドエラーを登録します。
-     * <p>メッセージ中の変数はインデックス形式で指定する必要がります。
-     * @param field フィールドパス。
-     * @param fieldValue フィールドの値。
-     * @param fieldType フィールドのクラスタイプ。
-     * @param cellAddress セルのアドレス。x座標が列番号です。y座標が行番号です。列番号、行番号は0から始まります。
-     * @param errorCode メッセージコード。
-     * @param errorArgs メッセージ変数。
-     */
-    public void rejectSheetValue(final String field, final Object fieldValue, final Class<?> fieldType,
-            final Point cellAddress, final String errorCode, final Object[] errorArgs) {
-        addError(FieldErrorBuilder.create()
-                .objectName(getObjectName()).fieldPath(buildFieldPath(field))
-                .fieldValue(fieldValue).fieldType(fieldType)
-                .codes(generateMessageCodes(errorCode, field, fieldType), errorArgs)
-                .sheetName(getSheetName()).cellAddress(cellAddress)
-                .build());
-    }
-    
-    /**
-     * エラーコードとメッセージ引数を指定してシートのフィールドエラーを登録します。
-     * <p>メッセージ中の変数はインデックス形式で指定する必要がります。
-     * @param field フィールドパス。
-     * @param fieldValue フィールドの値。
-     * @param fieldType フィールドのクラスタイプ。
-     * @param cellAddress セルのアドレス。x座標が列番号です。y座標が行番号です。列番号、行番号は0から始まります。
-     * @param errorCode メッセージコード。
-     * @param errorArgs メッセージ変数。
-     * @param defaultMessage デフォルトメッセージ。指定したエラーコードに対するメッセージが見つからないときに使用する値です。
-     */
-    public void rejectSheetValue(final String field, final Object fieldValue, final Class<?> fieldType,
-            final Point cellAddress, final String errorCode, final Object[] errorArgs, final String defaultMessage) {
-        addError(FieldErrorBuilder.create()
-                .objectName(getObjectName()).fieldPath(buildFieldPath(field))
-                .fieldValue(fieldValue).fieldType(fieldType)
-                .codes(generateMessageCodes(errorCode, field, fieldType), errorArgs)
-                .sheetName(getSheetName()).cellAddress(cellAddress)
-                .defaultMessage(defaultMessage)
-                .build());
-    }
-    
-    /**
-     * エラーコードとデメッセージ変数を指定してシートのフィールドエラーを登録します。
-     * @param field フィールドパス。
-     * @param fieldValue フィールドの値。
-     * @param fieldType フィールドのクラスタイプ。
-     * @param cellAddress セルのアドレス。x座標が列番号です。y座標が行番号です。列番号、行番号は0から始まります。
-     * @param errorCode メッセージコード。
-     * @param errorVars メッセージ変数。
-     */
-    public void rejectSheetValue(final String field, final Object fieldValue, final Class<?> fieldType,
-            final Point cellAddress, final String errorCode, final Map<String, Object> errorVars) {
-        addError(FieldErrorBuilder.create()
-                .objectName(getObjectName()).fieldPath(buildFieldPath(field))
-                .fieldValue(fieldValue).fieldType(fieldType)
-                .codes(generateMessageCodes(errorCode, field, fieldType), errorVars)
-                .sheetName(getSheetName()).cellAddress(cellAddress)
-                .build());
-    }
-    
-    /**
-     * エラーコードとメッセージ変数を指定してシートのフィールドエラーを登録します。
-     * @param field フィールドパス。
-     * @param fieldValue フィールドの値。
-     * @param fieldType フィールドのクラスタイプ。
-     * @param cellAddress セルのアドレス。x座標が列番号です。y座標が行番号です。列番号、行番号は0から始まります。
-     * @param errorCode メッセージコード。
-     * @param errorVars メッセージ変数。
-     * @param defaultMessage デフォルトメッセージ。指定したエラーコードに対するメッセージが見つからないときに使用する値です。
-     */
-    public void rejectSheetValue(final String field, final Object fieldValue, final Class<?> fieldType,
-            final Point cellAddress, final String errorCode, final Map<String, Object> errorVars, final String defaultMessage) {
-        addError(FieldErrorBuilder.create()
-                .objectName(getObjectName()).fieldPath(buildFieldPath(field))
-                .fieldValue(fieldValue).fieldType(fieldType)
-                .codes(generateMessageCodes(errorCode, field, fieldType), errorVars)
-                .sheetName(getSheetName()).cellAddress(cellAddress)
-                .defaultMessage(defaultMessage)
-                .build());
-    }
-    
-    /**
-     * メッセージ変数付きのフィールド型変換エラーを指定する。
-     * @param field フィールドパス。
-     * @param fieldValue フィールドの値。
-     * @param fieldType フィールドのクラスタイプ。
-     * @param errorVars メッセージ変数
-     */
-    public void rejectTypeBind(final String field, final Object fieldValue, final Class<?> fieldType, final Map<String, Object> errorVars) {
-        addError(FieldErrorBuilder.create()
-                .objectName(getObjectName()).fieldPath(buildFieldPath(field))
-                .fieldValue(fieldValue).fieldType(fieldType)
-                .typeBindFailure(true)
-                .codes(getMessageCodeGenerator().generateTypeMismatchCodes(getObjectName(), field, fieldType), errorVars)
-                .build());
-    }
-    
-    /**
-     * メッセージ変数付きのシートのフィールド型変換エラーを指定する。
-     * @param field フィールドパス。
-     * @param fieldValue フィールドの値。
-     * @param fieldType フィールドのクラスタイプ。
-     * @param errorVars メッセージ変数
-     * @param cellAddress セルのアドレス。x座標が列番号です。y座標が行番号です。列番号、行番号は0から始まります。
-     * @param label フィールドのラベル。
-     */
-    public void rejectSheetTypeBind(final String field, final Object fieldValue, final Class<?> fieldType, final Map<String, Object> errorVars,
-            final Point cellAddress, final String label) {
-        addError(FieldErrorBuilder.create()
-                .objectName(getObjectName()).fieldPath(buildFieldPath(field))
-                .fieldValue(fieldValue).fieldType(fieldType)
-                .typeBindFailure(true)
-                .codes(getMessageCodeGenerator().generateTypeMismatchCodes(getObjectName(), field, fieldType), errorVars)
-                .sheetName(getSheetName()).cellAddress(cellAddress)
-                .label(label)
-                .build());
-    }
-    
-    /**
-     * フィールド型変換エラーを指定する。
-     * @param field フィールドパス。
-     * @param fieldValue フィールドの値。
-     * @param fieldType フィールドのクラスタイプ。
-     */
-    public void rejectTypeBind(final String field, final Object fieldValue, final Class<?> fieldType) {
-        addError(FieldErrorBuilder.create()
-                .objectName(getObjectName()).fieldPath(buildFieldPath(field))
-                .fieldValue(fieldValue).fieldType(fieldType)
-                .typeBindFailure(true)
-                .codes(getMessageCodeGenerator().generateTypeMismatchCodes(getObjectName(), field, fieldType))
-                .build());
-    }
-    
-    /**
-     * シートのフィールド型変換エラーを指定する。
-     * @param field フィールドパス。
-     * @param fieldValue フィールドの値。
-     * @param fieldType フィールドのクラスタイプ。
-     * @param cellAddress セルのアドレス。x座標が列番号です。y座標が行番号です。列番号、行番号は0から始まります。
-     * @param label フィールドのラベル。
-     */
-    public void rejectSheetTypeBind(final String field, final Object fieldValue, final Class<?> fieldType,
-            final Point cellAddress, final String label) {
-            addError(FieldErrorBuilder.create()
-                .objectName(getObjectName()).fieldPath(buildFieldPath(field))
-                .fieldValue(fieldValue).fieldType(fieldType)
-                .typeBindFailure(true)
-                .codes(getMessageCodeGenerator().generateTypeMismatchCodes(getObjectName(), field, fieldType))
-                .sheetName(getSheetName()).cellAddress(cellAddress)
-                .label(label)
-                .build());
-    }
-    
-    public MessageCodeGenerator getMessageCodeGenerator() {
-        return messageCodeGenerator;
-    }
-    
-    public void setMessageCodeGenerator(MessageCodeGenerator messageCodeGenerator) {
-        this.messageCodeGenerator = messageCodeGenerator;
+    public <T> FieldFormatter<T> findFieldFormatter(final String field, final Class<T> fieldType) {
+        String fieldPath = buildFieldPath(field);
+        return fieldFormatterRegistry.findFormatter(fieldPath, fieldType);
     }
     
     public String[] generateMessageCodes(final String code) {
@@ -1123,6 +718,30 @@ public class SheetBindingErrors {
     
     public String[] generateMessageCodes(final String code, final String field, final Class<?> fieldType) {
         return getMessageCodeGenerator().generateCodes(code, getObjectName(), field, fieldType);
+    }
+    
+    public MessageCodeGenerator getMessageCodeGenerator() {
+        return messageCodeGenerator;
+    }
+    
+    public void setMessageCodeGenerator(MessageCodeGenerator messageCodeGenerator) {
+        this.messageCodeGenerator = messageCodeGenerator;
+    }
+    
+    /**
+     * フィールドのフォーマッタの管理クラスを取得する。
+     * @return
+     */
+    public FieldFormatterRegistry getFieldFormatterRegistry() {
+        return fieldFormatterRegistry;
+    }
+    
+    /**
+     * フィールドのフォーマッタクラスを設定する。
+     * @param fieldFormatterRegistry フィールドのフォーマッタの管理クラス
+     */
+    public void setFieldFormatterRegistry(FieldFormatterRegistry fieldFormatterRegistry) {
+        this.fieldFormatterRegistry = fieldFormatterRegistry;
     }
     
 }

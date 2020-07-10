@@ -3,18 +3,23 @@ package com.gh.mygreen.xlsmapper.fieldprocessor;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.apache.poi.ss.usermodel.Sheet;
 
 import com.gh.mygreen.xlsmapper.AnnotationInvalidException;
-import com.gh.mygreen.xlsmapper.ArgUtils;
-import com.gh.mygreen.xlsmapper.Utils;
-import com.gh.mygreen.xlsmapper.XlsMapperConfig;
-import com.gh.mygreen.xlsmapper.XlsMapperException;
+import com.gh.mygreen.xlsmapper.Configuration;
+import com.gh.mygreen.xlsmapper.annotation.XlsArrayColumns;
 import com.gh.mygreen.xlsmapper.annotation.XlsColumn;
+import com.gh.mygreen.xlsmapper.annotation.XlsMapColumns;
 import com.gh.mygreen.xlsmapper.annotation.XlsNestedRecords;
-import com.gh.mygreen.xlsmapper.fieldprocessor.processor.HorizontalRecordsProcessor;
-import com.gh.mygreen.xlsmapper.fieldprocessor.processor.VerticalRecordsProcessor;
+import com.gh.mygreen.xlsmapper.fieldaccessor.FieldAccessor;
+import com.gh.mygreen.xlsmapper.fieldprocessor.impl.HorizontalRecordsProcessor;
+import com.gh.mygreen.xlsmapper.fieldprocessor.impl.VerticalRecordsProcessor;
+import com.gh.mygreen.xlsmapper.localization.MessageBuilder;
+import com.gh.mygreen.xlsmapper.util.ArgUtils;
+import com.gh.mygreen.xlsmapper.util.FieldAccessorUtils;
+import com.gh.mygreen.xlsmapper.util.Utils;
 import com.gh.mygreen.xlsmapper.xml.AnnotationReader;
 
 
@@ -27,48 +32,134 @@ import com.gh.mygreen.xlsmapper.xml.AnnotationReader;
 public class RecordsProcessorUtil {
     
     /**
-     * アノテーションXlsColumnの属性columnNameで指定した値が、ヘッダーセルに存在するかチェックする。
+     * アノテーション{@link XlsColumn}の属性columnNameで指定した値が、ヘッダーセルに存在するかチェックする。
      * @param sheet
      * @param recordClass
      * @param headers
      * @param reader
      * @param config
-     * @throws Exception
+     * @throws CellNotFoundException セルが見つからない場合
      */
     public static void checkColumns(final Sheet sheet, final Class<?> recordClass,
-            final List<RecordHeader> headers, final AnnotationReader reader, final XlsMapperConfig config)
-                    throws XlsMapperException {
+            final List<RecordHeader> headers, final AnnotationReader reader, final Configuration config)
+                    throws CellNotFoundException {
         
-        for(FieldAdaptor property : Utils.getLoadingColumnProperties(recordClass, null, reader, config)) {
-            final XlsColumn column = property.getLoadingAnnotation(XlsColumn.class);
+        List<FieldAccessor> properties = FieldAccessorUtils.getPropertiesWithAnnotation(recordClass, reader, XlsColumn.class);
+        
+        for(FieldAccessor property : properties) {
+            final XlsColumn column = property.getAnnotationNullable(XlsColumn.class);
             
-            if(!column.optional()){
-                String columnName = column.columnName();
-                boolean find = false;
-                for(RecordHeader info: headers){
-                    if(Utils.matches(info.getLabel(), columnName, config)){
-                        find = true;
-                        break;
-                    }
+            if(column.optional()){
+                continue;
+            }
+            
+            String columnName = column.columnName();
+            boolean find = false;
+            for(RecordHeader info: headers){
+                if(Utils.matches(info.getLabel(), columnName, config)){
+                    find = true;
+                    break;
                 }
-                if(!find){
-                    throw new CellNotFoundException(sheet.getSheetName(), columnName);
-                }
+            }
+            if(!find){
+                throw new CellNotFoundException(sheet.getSheetName(), columnName);
             }
         }
         
     }
     
     /**
+     * アノテーション{@link XlsMapColumns}の属性previousColumnName、nextColumnNameで指定した値がヘッダーセルに存在するかチェックする。
+     * @since 2.0
+     * @param sheet
+     * @param recordClass
+     * @param headers
+     * @param reader
+     * @param config
+     * @throws CellNotFoundException セルが見つからない場合
+     */
+    public static void checkMapColumns(final Sheet sheet, final Class<?> recordClass,
+            final List<RecordHeader> headers, final AnnotationReader reader, final Configuration config)
+                    throws CellNotFoundException {
+        
+        List<FieldAccessor> properties = FieldAccessorUtils.getPropertiesWithAnnotation(recordClass, reader, XlsMapColumns.class);
+        
+        for(FieldAccessor property : properties) {
+            final XlsMapColumns mapColumns = property.getAnnotationNullable(XlsMapColumns.class);
+            if(mapColumns.optional()) {
+                continue;
+            }
+            
+            final String previousColumnName = mapColumns.previousColumnName();
+            boolean foundPrevious = headers.stream()
+                .filter(info -> Utils.matches(info.getLabel(), previousColumnName, config))
+                .findFirst()
+                .isPresent();
+            
+            if(!foundPrevious) {
+                throw new CellNotFoundException(sheet.getSheetName(), previousColumnName);
+            }
+            
+            final String nextColumnName = mapColumns.nextColumnName();
+            if(!nextColumnName.isEmpty()) {
+                boolean foundNext = headers.stream()
+                        .filter(info -> Utils.matches(info.getLabel(), nextColumnName, config))
+                        .findFirst()
+                        .isPresent();
+                
+                if(!foundNext) {
+                    throw new CellNotFoundException(sheet.getSheetName(), nextColumnName);
+                }
+            }
+            
+        }
+    }
+    
+    /**
+     * アノテーション{@link XlsArrayColumns}の属性columnNameで指定した値がヘッダーセルに存在するかチェックする。
+     * @since 2.0
+     * @param sheet
+     * @param recordClass
+     * @param headers
+     * @param reader
+     * @param config
+     * @throws CellNotFoundException セルが見つからない場合
+     */
+    public static void checkArrayColumns(final Sheet sheet, final Class<?> recordClass,
+            final List<RecordHeader> headers, final AnnotationReader reader, final Configuration config) {
+        
+        List<FieldAccessor> properties = FieldAccessorUtils.getPropertiesWithAnnotation(recordClass, reader, XlsArrayColumns.class);
+        
+        for(FieldAccessor property : properties) {
+            final XlsArrayColumns arrayColumns = property.getAnnotationNullable(XlsArrayColumns.class);
+            if(arrayColumns.optional()) {
+                continue;
+            }
+            
+            final String columnName = arrayColumns.columnName();
+            boolean found = headers.stream()
+                .filter(info -> Utils.matches(info.getLabel(), columnName, config))
+                .findFirst()
+                .isPresent();
+            
+            if(!found) {
+                throw new CellNotFoundException(sheet.getSheetName(), columnName);
+            }
+            
+        }
+        
+    }
+    
+    /**
      * マッピング対象となるセルの結合サイズが、全て同じかチェックする。
-     * 
      * @since 1.4
      * @param sheet
      * @param records
-     * @param 結合したセルのサイズを返す。
-     * @throws NestMergedSizeException 
+     * @return 結合したセルのサイズを返す。
+     * @throws NestedRecordMergedSizeException
      */
-    public static int checkNestedMergedSizeRecords(final Sheet sheet, final List<MergedRecord> records) throws NestMergedSizeException {
+    public static int checkNestedMergedSizeRecords(final Sheet sheet, final List<MergedRecord> records) 
+            throws NestedRecordMergedSizeException {
         
         int mergedSize = -1;
         
@@ -80,10 +171,14 @@ public class RecordsProcessorUtil {
             }
             
             if(mergedSize != record.getMergedSize()) {
-                String message = String.format("Not match merged size. In sheet '%s' with cell '%s', expected merged size=%s, but actual merged size=%s.",
-                        sheet.getSheetName(), record.getMergedRange().formatAsString(), mergedSize, record.getMergedSize());
                 
-                throw new NestMergedSizeException(sheet.getSheetName(), record.getMergedSize(), message);
+                String message = MessageBuilder.create("anno.XlsNestedRecords.mergeSizeNoMatch")
+                        .var("sheetName", sheet.getSheetName())
+                        .var("address", record.getMergedRange().formatAsString())
+                        .var("actualMergeSize", record.getMergedSize())
+                        .var("expectedMergeSize", mergedSize)
+                        .format();
+                throw new NestedRecordMergedSizeException(sheet.getSheetName(), record.getMergedSize(), message);
             }
         }
         
@@ -95,25 +190,25 @@ public class RecordsProcessorUtil {
      * アノテーション{@link XlsNestedRecords}の定義が、同じBeanに対して、入れ子構造になっていないかチェックする。
      * @since 1.4
      * @param recordClass チェック対象のレコードクラス
-     * @param adaptor アノテーションが付与されているフィールド
+     * @param accessor アノテーションが付与されているフィールド
      * @param reader {@link AnnotationReader}のインスタンス。
      * @throws AnnotationInvalidException 入れ子構造になっている場合
      */
-    public static void checkLoadingNestedRecordClass(final Class<?> recordClass, final FieldAdaptor adaptor, 
+    public static void checkLoadingNestedRecordClass(final Class<?> recordClass, final FieldAccessor accessor, 
             final AnnotationReader reader) throws AnnotationInvalidException {
         
         ArgUtils.notNull(recordClass, "recordClass");
-        ArgUtils.notNull(adaptor, "adaptor");
+        ArgUtils.notNull(accessor, "accessor");
         ArgUtils.notNull(reader, "reader");
         
         // 再帰的にチェックしていく。
         List<Class<?>> nestedRecordClasses = new ArrayList<>();
-        checkLoadingNestedRecordClass(recordClass, adaptor, reader, nestedRecordClasses);
+        checkLoadingNestedRecordClass(recordClass, accessor, reader, nestedRecordClasses);
         
         
     }
     
-    private static void checkLoadingNestedRecordClass(final Class<?> recordClass, final FieldAdaptor adaptor, 
+    private static void checkLoadingNestedRecordClass(final Class<?> recordClass, final FieldAccessor accessor, 
             final AnnotationReader reader, final List<Class<?>> nestedRecordClasses) throws AnnotationInvalidException {
         
         if(recordClass == Object.class) {
@@ -121,27 +216,29 @@ public class RecordsProcessorUtil {
         }
         
         if(nestedRecordClasses.contains(recordClass)) {
-            XlsNestedRecords anno = adaptor.getLoadingAnnotation(XlsNestedRecords.class);
-            throw new AnnotationInvalidException(
-                    String.format("With '%s', annotation '@XlsNestedRecords' should only granted not same classes.",
-                            adaptor.getNameWithClass()),
-                    anno);
+            throw new AnnotationInvalidException(MessageBuilder.create("anno.XlsNestedRecords.recursive")
+                    .var("property", accessor.getNameWithClass())
+                    .format());
         }
         
-        final List<FieldAdaptor> nestedProperties = Utils.getLoadingNestedRecordsProperties(recordClass, reader);
-        for(FieldAdaptor property : nestedProperties) {
+        final List<FieldAccessor> nestedProperties = FieldAccessorUtils.getPropertiesWithAnnotation(recordClass, reader, XlsNestedRecords.class)
+                .stream()
+                .filter(p -> p.isReadable())
+                .collect(Collectors.toList());
+        
+        for(FieldAccessor property : nestedProperties) {
             
             nestedRecordClasses.add(recordClass);
             
-            final XlsNestedRecords nestedAnno = property.getLoadingAnnotation(XlsNestedRecords.class);
-            final Class<?> clazz = property.getTargetClass();
+            final XlsNestedRecords nestedAnno = property.getAnnotationNullable(XlsNestedRecords.class);
+            final Class<?> clazz = property.getType();
             
             if(Collection.class.isAssignableFrom(clazz)) {
                 // mapping by one-to-many
                 
                 Class<?> nestedDecordClass = nestedAnno.recordClass();
                 if(nestedDecordClass == Object.class) {
-                    nestedDecordClass = property.getLoadingGenericClassType();
+                    nestedDecordClass = property.getComponentType();
                 }
                 
                 checkLoadingNestedRecordClass(nestedDecordClass, property, reader, nestedRecordClasses);
@@ -151,7 +248,7 @@ public class RecordsProcessorUtil {
                 
                 Class<?> nestedDecordClass = nestedAnno.recordClass();
                 if(nestedDecordClass == Object.class) {
-                    nestedDecordClass = property.getLoadingGenericClassType();
+                    nestedDecordClass = property.getComponentType();
                 }
                 
                 checkLoadingNestedRecordClass(nestedDecordClass, property, reader, nestedRecordClasses);
@@ -161,7 +258,7 @@ public class RecordsProcessorUtil {
                 
                 Class<?> nestedDecordClass = nestedAnno.recordClass();
                 if(nestedDecordClass == Object.class) {
-                    nestedDecordClass = property.getTargetClass();
+                    nestedDecordClass = property.getType();
                 }
                 
                 checkLoadingNestedRecordClass(nestedDecordClass, property, reader, nestedRecordClasses);
@@ -176,25 +273,25 @@ public class RecordsProcessorUtil {
      * アノテーション{@link XlsNestedRecords}の定義が、同じBeanに対して、入れ子構造になっていないかチェックする。
      * @since 1.4
      * @param recordClass チェック対象のレコードクラス
-     * @param adaptor アノテーションが付与されているフィールド
+     * @param accessor アノテーションが付与されているフィールド
      * @param reader {@link AnnotationReader}のインスタンス。
      * @throws AnnotationInvalidException 入れ子構造になっている場合
      */
-    public static void checkSavingNestedRecordClass(final Class<?> recordClass, final FieldAdaptor adaptor, 
+    public static void checkSavingNestedRecordClass(final Class<?> recordClass, final FieldAccessor accessor, 
             final AnnotationReader reader) throws AnnotationInvalidException {
         
         ArgUtils.notNull(recordClass, "recordClass");
-        ArgUtils.notNull(adaptor, "adaptor");
+        ArgUtils.notNull(accessor, "accessor");
         ArgUtils.notNull(reader, "reader");
         
         // 再帰的にチェックしていく。
         List<Class<?>> nestedRecordClasses = new ArrayList<>();
-        checkSavingNestedRecordClass(recordClass, adaptor, reader, nestedRecordClasses);
+        checkSavingNestedRecordClass(recordClass, accessor, reader, nestedRecordClasses);
         
         
     }
     
-    private static void checkSavingNestedRecordClass(final Class<?> recordClass, final FieldAdaptor adaptor, 
+    private static void checkSavingNestedRecordClass(final Class<?> recordClass, final FieldAccessor accessor, 
             final AnnotationReader reader, final List<Class<?>> nestedRecordClasses) throws AnnotationInvalidException {
         
         if(recordClass == Object.class) {
@@ -202,27 +299,29 @@ public class RecordsProcessorUtil {
         }
         
         if(nestedRecordClasses.contains(recordClass)) {
-            XlsNestedRecords anno = adaptor.getSavingAnnotation(XlsNestedRecords.class);
-            throw new AnnotationInvalidException(
-                    String.format("With '%s', annotation '@XlsNestedRecords' should only granted not same classes.",
-                            adaptor.getNameWithClass()),
-                    anno);
+            throw new AnnotationInvalidException(MessageBuilder.create("anno.XlsNestedRecords.recursive")
+                    .var("property", accessor.getNameWithClass())
+                    .format());
         }
         
-        final List<FieldAdaptor> nestedProperties = Utils.getSavingNestedRecordsProperties(recordClass, reader);
-        for(FieldAdaptor property : nestedProperties) {
+        final List<FieldAccessor> nestedProperties = FieldAccessorUtils.getPropertiesWithAnnotation(recordClass, reader, XlsNestedRecords.class)
+                .stream()
+                .filter(p -> p.isWritable())
+                .collect(Collectors.toList());
+        
+        for(FieldAccessor property : nestedProperties) {
             
             nestedRecordClasses.add(recordClass);
             
-            final XlsNestedRecords nestedAnno = property.getSavingAnnotation(XlsNestedRecords.class);
-            final Class<?> clazz = property.getTargetClass();
+            final XlsNestedRecords nestedAnno = property.getAnnotationNullable(XlsNestedRecords.class);
+            final Class<?> clazz = property.getType();
             
             if(Collection.class.isAssignableFrom(clazz)) {
                 // mapping by one-to-many
                 
                 Class<?> nestedDecordClass = nestedAnno.recordClass();
                 if(nestedDecordClass == Object.class) {
-                    nestedDecordClass = property.getSavingGenericClassType();
+                    nestedDecordClass = property.getComponentType();
                 }
                 
                 checkSavingNestedRecordClass(nestedDecordClass, property, reader, nestedRecordClasses);
@@ -232,7 +331,7 @@ public class RecordsProcessorUtil {
                 
                 Class<?> nestedDecordClass = nestedAnno.recordClass();
                 if(nestedDecordClass == Object.class) {
-                    nestedDecordClass = property.getSavingGenericClassType();
+                    nestedDecordClass = property.getComponentType();
                 }
                 
                 checkSavingNestedRecordClass(nestedDecordClass, property, reader, nestedRecordClasses);
@@ -242,7 +341,7 @@ public class RecordsProcessorUtil {
                 
                 Class<?> nestedDecordClass = nestedAnno.recordClass();
                 if(nestedDecordClass == Object.class) {
-                    nestedDecordClass = property.getTargetClass();
+                    nestedDecordClass = property.getType();
                 }
                 
                 checkSavingNestedRecordClass(nestedDecordClass, property, reader, nestedRecordClasses);

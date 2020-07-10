@@ -2,6 +2,201 @@
 リリースノート
 ======================================
 
+--------------------------------------------------------
+ver.2.1 - 2019-06-23
+--------------------------------------------------------
+
+* セルの値を取得する方法を別ライブラリ `excel-cellformatter <http://mygreen.github.io/excel-cellformatter/>`_ の最新版ver.0.11に対応しました。
+
+  * 日付の書式の新元号 ``令和`` に対応します。
+
+* `#103 <https://github.com/mygreen/xlsmapper/pull/103>`_ / `#108 <https://github.com/mygreen/xlsmapper/pull/108>`_ XlsMapperのメソッド ``getConfiguration/setConfiguration`` の綴り間違いを修正しました。
+
+* `#104 <https://github.com/mygreen/xlsmapper/pull/104>`_ セルコメントのマッピング機能を追加しました。
+
+  * 既存のセルのマッピング時にセルコメントもマッピングできるフィールド ``comments`` を追加( :doc:`sheetinfo_comment` )。
+  * :ref:`@XlsComment <annotationXlsComment>` - セルの座標を直接指定して、セルのコメントをマッピングします。
+  * :ref:`@XlsLablledComment <annotationXlsLabelledComment>` - レコードの隣接するカラムをマッピングします。
+  * :ref:`@XlsCommentOption <annotationXlsCommentOption>` - 書き込み時のセルのコメントのサイズなどの制御を指定します。
+
+
+.. _realease_2_0:
+
+--------------------------------------------------------
+ver.2.0 - 2018-06-30
+--------------------------------------------------------
+
+* :ref:`前提条件 <dependencyEnv>` を変更しました。
+
+  * Java8以上に変更しました。Java7は非対応になります。
+  * POI-3.17 に変更しました。POI-3.16以前は非対応となります。
+  * BeanValidation 2.0に対応しました。
+
+* セルの値を取得する方法を別ライブラリ `excel-cellformatter <http://mygreen.github.io/excel-cellformatter/>`_ の最新版ver.0.10に対応しました。
+
+* マッピング可能な日時型として、以下を追加しまいた。
+
+  * ``java.time.LocalDate``
+  * ``java.time.LocalTime``
+  * ``java.time.LocalDateTime``
+
+* 隣接するセルをマッピング可能なアノテーションを追加しました。
+
+  * :ref:`@XlsArrayCells <annotationXlsArrayCells>` - 連続し隣接するセルを配列またはリストにマッピングします。
+  * :ref:`@XlsLabelledArrayCells <annotationXlsLabelledArrayCells>` - 見出し付きの連続し隣接するセルを配列またはリストにマッピングします。
+  * :ref:`@XlsArrayColumns <annotationXlsArrayColumns>` - レコードの隣接するカラムをマッピングします。
+  * :ref:`@XlsArrayOption <annotationXlsArrayOption>` - 上記のアノテーションの書き込み時の設定を補助します。
+
+* 既存のアノテーションから機能を分離し、新たに以下の補助的なアノテーションを追加しました。
+
+  * 値をトリムするアノテーション ``@XlsConverter(trim=true)`` を機能分離し、 :ref:`@XlsTrim <annotationXlsTrim>` を追加しました。
+  * 初期値を指摘するアノテーション ``@XlsConverter(defaultValue="初期値")`` を機能分離し、 :ref:`@XlsDefaultValue <annotationXlsDefaultValue>` を追加しました。
+  * セルの書き込み時の制御設定を行うアノテーション ``@XlsConverter(wrapText=true, shrinkToFit=false)`` を機能分離し、`@XlsCellOption <annotationXlsCellOption>` を追加しました。
+  
+    * さらに、 ``@XlsCellOption`` において、属性 ``horizontalAlign`` 、 ``verticalAlign`` にて、セルの横方向、縦方向の位置を指定できます。
+  
+  * レコードの書き込み時のオプションを指定するアノテーション ``@XlsHorizontalRecords(overRecord=..., remainedRecord=...)`` を機能分離し、 :ref:`@XlsRecordOption <annotationXlsRecordOption>` を追加しました。 
+    
+    * アノテーション ``@XlsVerticalRecords(overRecord=..., remainedRecord=...)`` も同様に機能分離しました。
+
+* ``@XlsHorizontalRecords/XlsVerticalRecords`` でレコードをマッピングする際に、データ開始位置をプログラマティックに指定できるアノテーション :ref:`@XlsRecordFinder <annotationXlsRecordFinder>` を追加しました。
+
+
+* レコードをマッピングする際に、そのレコードを除外するアノテーション ``@XlsIsEmpty`` の名称を :ref:`@XlsIgnorable <annotationXlsIgnorable>` に変更しました。
+
+  * さらに、レコードを除外する条件として、 ``@XlsHorizontalRecords(ignoreEmptyRecord=true)`` を指定しなくても除外するようにしました。属性 ``ignoreEmptyRecord`` は削除しました。
+
+* 日時型のマッピング時の書式を指定するアノテーション ``@XlsDateConverter`` の名称を ``@XlsDateTimeConverter`` に変更しました。
+
+* 列挙型のマッピング時の書式を指定するアノテーション ``@XlsEnumConverter`` において、属性 ``valueMethodName`` の名称を ``aliasName`` に変更しました。
+
+* 配列／リスト型にマッピング時の書式を指定するアノテーション ``@XlsArrayConverter`` において、属性の名称を以下に変更しました。
+
+  * 属性の名称を ``itemConverterClass`` → ``elementConverterClass`` に変更しました。
+  * 属性の名称を ``ignoreEmptyItem`` → ``ignoreEmptyElement`` に変更しました。
+  * 属性の名称を ``itemClass`` → ``elementClass`` に変更しました。
+  * 要素をパース/フォーマットするクラス ``ItemConverter`` の名称を ``ElementConverter`` に変更しました。
+    デフォルト実装クラスの名称も ``DefaultItemConverter`` → ``DefaultElementConverter`` に変更しました。
+
+
+* マッピングの順番を指定するアノテーション ``@XlsHint(order=1)`` の名称を :ref:`@XlsOrder <annotationXlsOrder>` に変更しました。
+
+* レコードをスキップするかどうか判定用のメソッドを指定するアノテーション ``@XlsIsEmpty`` の名称を :ref:`@XlsIgnorable <annotationXlsIgnorable>` に変更しました。
+
+* 見出し付きセルをマッピングするアノテーション :ref:`@XlsLabelledCell <annotationXlsLabelledCell>` において、見出し用のセルが結合されているかを考慮する属性 ``labelMarged`` を追加しました。
+
+  * 従来は、結合されていても考慮されていないため、属性 ``skip`` で結合セル分を読み飛ばしていましたが、属性 ``labelMarged`` の初期値は true となるため、動作が変わってきます。
+
+* 縦方向のレコードをマッピングするアノテーション :ref:`@XlsVerticalRecords <annotationXlsVerticalRecords>` において、表の開始位置を指定する 属性 ``bottom`` を追加しました。
+
+* 繰り返す表をマッピングするアノテーション :ref:`@XlsIterateTables <annotationXlsIterateTables>` において、以下の変更を行いました。
+
+  * マッピング可能なクラスタイプとして ``java.util.Collection/java.util.Set`` 型に対応しました。
+  * 縦方向のレコードをマッピングするアノテーション :ref:`@XlsVerticalRecords <annotationXlsVerticalRecords>` に対応しました。
+  * 開始位置を指定する属性 ``address`` を削除しました。
+
+* :doc:`システム設定のプロパティ<configuration>` を指定するクラス ``XlsConfig`` の名称を ``Configuration`` に変更しました。さらに、以下の項目を追加しました。
+
+  * ``cacheCellValueOnLoad`` - 読み込み時にセルの値をキャッシュして処理速度の向上を行うかどうか指定します。
+  * ``SheetBindingErrorsFactory`` - マッピング時のエラー情報 ``SheetBindingErrors`` のインスタンスを作成すためのコールバック用クラスを指定します。
+  * ``annotationMapping`` - XMLなどによるアノテーションのマッピング情報を設定します。
+
+* XMLによるマッピングの指定方法を、システム設定のプロパティで設定するよう変更しました。詳細は、:doc:`xmlmapping` を参照してください。
+
+* 値の検証を行うインタフェース ``ObjectValidator`` 、 ``FieldValidtor`` において、BeanValidationのグループに相当する機能を追加し、指定できるようにしました。
+
+* 値の検証の結果作成されるエラーオブジェクトをメッセージに変換するクラス ``SheetMessageConverter`` の名称を ``SheetErrorFormatter`` に変更しました。
+
+* 独自のクラスタイプにマッピングする方法が変更になりました。詳細は、 :doc:`annotation_converter_custom` を参照してください。
+
+* 独自の表をマッピングする方法の指定方法として、アノテーション ``@XlsFieldProcessor`` による方法を追加しました。詳細は、 :doc:`fieldprocessor` を参照してください。
+
+* 表・セルをマッピングする各種アノテーションに、属性 ``cases`` を追加し、読み込み時／書き込み時と任意の処理で適用すること指定できるようにしました。
+
+* リスナーを指定するアノテーション ``@XlsListener`` において、リスナークラスを複数指定できるようにしました。
+
+  * さらに、属性 ``listenerClass`` の名称を ``value`` に変更し、属性名の指定を省略できるようにしました。
+
+* パッケージ構成を以下のように変更しました。
+
+  * ``com.gh.mygreen.xlsmapper.fieldprocessor.processor`` → ``com.gh.mygreen.xlsmapper.processor.impl`` に変更しました。
+  * ``com.gh.mygreen.xlsmapper.cellconverter.converter → ``com.gh.mygreen.xlsmapper.converter.impl`` に変更しました。
+  * ``com.gh.mygreen.xlsmapper.validation.fieldvalidation`` を ``com.gh.mygreen.xlsmapper.validation.fieldvalidation.impl`` に分割しました。
+  * UtilやNavigator、IsEmptyBuilder クラスなどを、 ``com.gh.mygreen.xlsmapper.util`` パッケージに移動しました。
+
+* セルのアドレスを表現するクラス ``CellPosition`` を追加しました。
+  
+  * このクラスは、 ``java.io.Serializable`` / ``Comparable/Cloneable`` を実装しており、扱いやすくなっています。
+  * さらに、各クラス ``java.awt.Point/org.apache.poi.ss.util.CellAddress`` に変換可能です。
+
+* 本ライブラリのルートの例外クラス ``XlsMapperException`` を 非検査例外RuntimeExceptionに変更しました。
+
+* フィールド情報を管理するクラス ``FieldAdapter`` の名称を ``FieldAccessor`` に変更しました。パッケージも ``com.gh.mygreen.xlsmapper.fieldaccessor`` に移動しました。
+
+* 複数のシートをマッピングした結果を格納するクラス ``SheetBingingErrorsContainer`` の名称を ``MultipleSheetBindingErrors`` に変更しました。
+
+* 実行時に出力されるメッセージを日本語化しました。
+
+* メッセージ定義のプロパティファイル ``SheetValidationMessages.properties`` の文字コードをUTF-8に変更し、asciiコードへの変換を不要にしました。
+
+
+--------------------------------------------------------
+ver.1.6 - 2017-01-02
+--------------------------------------------------------
+
+* `#88 <https://github.com/mygreen/xlsmapper/issues/88>`_ POI-3.15で、クラス ``CellCommentStore`` コンパイルエラーが発生する事象を修正しました。
+
+* `#89 <https://github.com/mygreen/xlsmapper/issues/89>`_ JSP-EL 2.x使用時に、例外 ``NoClassDefFoundError`` が発生する事象を修正しました。
+
+* `#90 <https://github.com/mygreen/xlsmapper/issues/90>`_ テスタにおいて、テスト結果ファイルを書き込む場所を ``src/test/out`` から ``target/test_out`` に変更しました。
+
+* `#91 <https://github.com/mygreen/xlsmapper/issues/91>`_ セルの値を取得する方法を別ライブラリ `excel-cellformatter <http://mygreen.github.io/excel-cellformatter/>`_ の最新版ver.0.9.1に対応しました。
+
+* `#92 <https://github.com/mygreen/xlsmapper/issues/92>`_ POI-3.14以降で、ネストする表を出力するときに例外が発生する事象を修正しました。
+
+* `#93 <https://github.com/mygreen/xlsmapper/issues/93>`_ 不正な数式を書き込んだときのテスタを修正しました。
+
+  * POI-3.14以降で、POIで使用できない関数を設定したときにエラーが発生しなくなったため、数式を他のケースに変更しました。
+
+* `#94 <https://github.com/mygreen/xlsmapper/issues/94>`_ POI-3.15で、``@XlsHorizotnalRecords`` において、レコードの挿入や削除を行ったレコードより下方にある結合したセルが解除される事象を修正しました。
+
+* `#95 <https://github.com/mygreen/xlsmapper/issues/95>`_ ``@XlsHorizotnalRecords`` において、レコードの削除を行う設定のとき、空のレコードを書き込むとデータ行が全て削除される事象を改善し、必ず、1レコードは残るように修正しました。
+
+* `#96 <https://github.com/mygreen/xlsmapper/issues/96>`_ POI-3.15 で、``CellLink`` や ``java.net.URL`` 型において、``A1`` 形式のセルに対するリンクを書き込んだ場合、例外が発生する事象を修正しました。
+
+
+
+--------------------------------------------------------
+ver.1.5.2 - 2016-10-30
+--------------------------------------------------------
+
+* `#87 <https://github.com/mygreen/xlsmapper/issues/87>`_ ``@XlsHorizontalRecords`` で書き込む際に、表の直後に文字がある場合、挿入操作をすると、直後の文字が消えてしまう事象を修正しました。
+  
+
+--------------------------------------------------------
+ver.1.5.1 - 2016-10-30
+--------------------------------------------------------
+
+* `#85 <https://github.com/mygreen/xlsmapper/issues/85>`_ ``PatternValidator`` のエラーメッセージ中に使用する変数 `patternName` としてパターン名を指定できるように引数を追加しました。
+  
+* `#86 <https://github.com/mygreen/xlsmapper/issues/86>`_ 入力値検証時のエラーメッセージのキーのパターンを追加しました。
+
+  * `\<エラーコード\>.\<オブジェクト名\>.\<パス\>.\<フィールド名\>` の形式を追加しました。
+
+
+--------------------------------------------------------
+ver.1.5.0 - 2016-08-30
+--------------------------------------------------------
+
+* `#83 <https://github.com/mygreen/xlsmapper/issues/83>`_ 出力する際の数式を定義するアノテーション :ref:`@XlsFormula <annotationFormula>` を追加しました。
+
+  * 式の制御、処理を行う :doc:`システム設定のプロパティ<configuration>` として、``formulaRecalcurationOnSave`` 、``formulaFormatter`` を追加しました。
+  
+  * EL式の実装である `JEXL <http://commons.apache.org/proper/commons-jexl/>`_ を依存ライブラリに追加しました。
+
+  * EL2.xをスタンドアローンで呼び出せるライブラリ `standalone-el <https://github.com/mygreen/standalone-el/>`_ の最新版ver.0.2に対応しました。
+
+* `#84 <https://github.com/mygreen/xlsmapper/issues/84>`_ Javadocの記述間違いを修正しました。
 
 --------------------------------------------------------
 ver.1.4.4 - 2016-07-02
@@ -9,7 +204,7 @@ ver.1.4.4 - 2016-07-02
 
 * セルの値を取得する方法を別ライブラリ `excel-cellformatter <http://mygreen.github.io/excel-cellformatter/>`_ の最新版ver.0.8.3に対応しました。
 
-* `#82 <https://github.com/mygreen/xlsmapper/issues/82>`_ : :doc:`XMLファイルによるマッピング <otheruse_xmlmapping>` で、アノテーション ``@XlsSheet`` に対して適用されない事象を修正しました。
+* `#82 <https://github.com/mygreen/xlsmapper/issues/82>`_ : :doc:`XMLファイルによるマッピング <xmlmapping>` で、アノテーション ``@XlsSheet`` に対して適用されない事象を修正しました。
 
 
 --------------------------------------------------------
@@ -29,7 +224,7 @@ ver.1.4.2 - 2016-05-07
 --------------------------------------------------------
 ver.1.4.1 - 2016-04-29
 --------------------------------------------------------
-* `#80 <https://github.com/mygreen/xlsmapper/issues/80>`_ : Java8の場合に、:doc:`XMLファイルによるマッピング <otheruse_xmlmapping>` で失敗する事象を修正しました。
+* `#80 <https://github.com/mygreen/xlsmapper/issues/80>`_ : Java8の場合に、:doc:`XMLファイルによるマッピング <xmlmapping>` で失敗する事象を修正しました。
 
 * セルの値を取得する方法を別ライブラリ `excel-cellformatter <http://mygreen.github.io/excel-cellformatter/>`_ の最新版ver.0.8に対応しました。
 
@@ -62,7 +257,7 @@ ver.1.2.1 - 2016-03-12
 ver.1.2 - 2016-03-12
 --------------------------------------------------------
 
-* :doc:`システムプロパティ <otheruse_config>` ``skipTypeBindFailure`` の名称を ``continueTypeBindFailure`` に変更し、意味と名称が一致するようにしました。
+* :doc:`システムプロパティ <configuration>` ``skipTypeBindFailure`` の名称を ``continueTypeBindFailure`` に変更し、意味と名称が一致するようにしました。
 
 * `#71 <https://github.com/mygreen/xlsmapper/issues/71>`_ : アノテーション ``@XlsColumn`` などを付与したフィールドが、``java.util.LinkedList`` などの具象クラスの場合をサポートしました。
 
@@ -77,7 +272,7 @@ ver.1.1 - 2016-03-08
 
 * `#66 <https://github.com/mygreen/xlsmapper/issues/66>`_ : セルの値を取得する方法を別ライブラリ `excel-cellformatter <http://mygreen.github.io/excel-cellformatter/>`_ の最新版ver.0.6に対応しました。
 
-* `#67 <https://github.com/mygreen/xlsmapper/issues/67>`_ : アノテーション :ref:`@XlsNumberConverter <annotationXlsNumberConverter>` 、 :ref:`@XlsDateConverter <annotationXlsDateConverter>` の属性 ``pattern`` を廃止し、
+* `#67 <https://github.com/mygreen/xlsmapper/issues/67>`_ : アノテーション :ref:`@XlsNumberConverter <annotationXlsNumberConverter>` 、 :ref:`@XlsDateConverter <annotationXlsDateTimeConverter>` の属性 ``pattern`` を廃止し、
   読み込み用の書式の属性 ``javaPattern`` と書き込み用の書式の属性 ``excelPattern`` を追加しました。
 
 
@@ -87,11 +282,11 @@ ver.1.1 - 2016-03-08
   * XML読み込み用のクラス ``XmlLoader`` の名称を ``XmlIO`` に変更し、XMLの書き込み用メソッドを追加しました。
   * 例外クラス ``XmlLoadException`` の名称を ``XmlOperateException`` に変更しました。
   * 読み込み時/書き込み時の処理対象となるシートの抽出処理を、 ``SheetFinder`` クラスに分離しました。
-    :doc:`XlsMapperConfigのプロパティ「sheetFinder」<otheruse_config>` でカスタマイズすることができます。
+    :doc:`XlsMapperConfigのプロパティ「sheetFinder」<configuration>` でカスタマイズすることができます。
 
 * `#72 <https://github.com/mygreen/xlsmapper/issues/72>`_ : ラベルや見出しを正規表現で指定、正規化してマッピングする機能を追加しました。
 
-  * :doc:`システム設定のプロパティ <otheruse_config>` として、 ``regexLabelText`` , ``normalizeLabelText`` を追加。
+  * :doc:`システム設定のプロパティ <configuration>` として、 ``regexLabelText`` , ``normalizeLabelText`` を追加。
   
   * :ref:`@XlsLabelledCell <annotationXlsLabelledCell>` の属性 ``label`` , ``headerLabel`` で有効になります。
   

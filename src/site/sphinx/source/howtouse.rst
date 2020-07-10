@@ -2,6 +2,11 @@
 基本的な使い方
 ======================================
 
+本ライブラリは、Excelファイルをアノテーションを用いてJavaBeansにマッピングするライブラリ「`XLSBeans <http://amateras.osdn.jp/cgi-bin/fswiki/wiki.cgi?page=XLSBeans>`_」を拡張し、機能を追加したものです。
+
+違いの詳細は、「 :doc:`XLSBeansとの違い <diff_xlsbeans>` 」を参照してください。
+
+
 ----------------------------
 ダウンロード
 ----------------------------
@@ -9,12 +14,63 @@
 Mavenを使用する場合は *pom.xml* に以下の記述を追加してください。
 
 .. sourcecode:: xml
+    :linenos:
+    :caption: pom.xmlの依存関係
     
     <dependency>
         <groupId>com.github.mygreen</groupId>
         <artifactId>xlsmapper</artifactId>
-        <version>1.4.4</version>
+        <version>2.1</version>
     </dependency>
+
+
+本ライブラリは、ロギングライブラリ `SLF4j <https://www.slf4j.org/>`_ を使用しているため、好きな実装を追加してください。
+
+.. sourcecode:: xml
+    :linenos:
+    :caption: ロギングライブラリの実装の追加（Log4jの場合）
+    
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-log4j12</artifactId>
+        <version>1.7.1</version>
+    </dependency>
+    <dependency>
+        <groupId>log4j</groupId>
+        <artifactId>log4j</artifactId>
+        <version>1.2.14</version>
+    </dependency>
+
+
+.. _dependencyEnv:
+
+----------------------------------------
+前提条件
+----------------------------------------
+
+本ライブラリの前提条件を以下に示します。
+
+
+.. list-table:: 前提条件
+   :widths: 50 50
+   :header-rows: 1
+   
+   * - 項目
+     - 値
+     
+   * - Java
+     - ver.1.8
+     
+   * - `Apache POI <https://poi.apache.org/>`_
+     - ver.3.17+
+
+   * - `Spring Framework <https://projects.spring.io/spring-framework/>`_ (option)
+     - ver.3.0+
+
+   * - | Bean Validation  (option)
+       | ( `Hibernate Validator <http://hibernate.org/validator/>`_ )
+     - | ver.1.0/1.1/2.0
+       | (Hibernate Validator 4.x/5.x/6.x)
 
 
 .. _howtouseSheetLoad:
@@ -45,8 +101,9 @@ Mavenを使用する場合は *pom.xml* に以下の記述を追加してくだ�
 * 表「User List」をマッピングするListのフィールドに、アノテーション :ref:`@XlsHorizontalRecords <annotationXlsHorizontalRecords>` を付与します。
 
 .. sourcecode:: java
+    :linenos:
+    :caption: シート用のPOJOクラスの定義
     
-    // シート用のPOJOクラスの定義
     @XlsSheet(name="List")
     public class UserSheet {
         
@@ -67,8 +124,9 @@ Mavenを使用する場合は *pom.xml* に以下の記述を追加してくだ�
 * フィールドのクラスタイプが、intや列挙型の場合もマッピングできます。
 
 .. sourcecode:: java
+    :linenos:
+    :caption: レコード用のPOJOクラスの定義
     
-    // レコード用のPOJOクラスの定義
     public class UserRecord {
         
         @XlsColumn(columnName="ID")
@@ -95,12 +153,13 @@ Mavenを使用する場合は *pom.xml* に以下の記述を追加してくだ�
 作成したPOJOを使ってシートを読み込むときは、 ``XlsMapper#load`` メソッドを利用します。
 
 .. sourcecode:: java
+    :linenos:
+    :caption: シートの読み込み
     
-    // シートの読み込み
     XlsMapper xlsMapper = new XlsMapper();
     UserSheet sheet = xlsMapper.load(
         new FileInputStream("example.xlsx"), // 読み込むExcelファイル。
-        UserSheet.class                     // シートマッピング用のPOJOクラス。
+        UserSheet.class                      // シートマッピング用のPOJOクラス。
         );
 
 
@@ -122,15 +181,15 @@ Mavenを使用する場合は *pom.xml* に以下の記述を追加してくだ�
 
 続いて、読み込み時に作成したシート用のマッピングクラスに、書き込み時の設定を付け加えるために修正します。
 
-* セル「Date」の書き込み時の書式を指定するために、アノテーション :ref:`@XlsDateConverter <annotationXlsDateConverter>` に付与します。
+* セル「Date」の書き込み時の書式を指定するために、アノテーション :ref:`@XlsDateTimeConverter <annotationXlsDateTimeConverter>` に付与します。
 
   * 属性 ``excelPattern`` でExcelのセルの書式を設定します。
 
-* 表「User List」のレコードを追加する操作を指定するために、アノテーション :ref:`@XlsHorizontalRecords <annotationXlsHorizontalRecords>` の属性 ``overRecord`` を指定します。
+* 表「User List」のレコードを追加する操作を指定するために、アノテーション :ref:`@XlsRecordOption <annotationXlsRecordOption>` を付与し、その属性 ``overOperation`` を指定します。
   
   * テンプレート上は、レコードが1行分しかないですが、実際に書き込むレコード数が2つ以上の場合、足りなくなるため、その際のシートの操作方法を指定します。
   
-  * 今回の ``OverRecordOperate.Insert`` は、行の挿入を行います。
+  * 今回の ``OverOperation#Insert`` は、行の挿入を行います。
 
 
 .. sourcecode:: java
@@ -140,10 +199,11 @@ Mavenを使用する場合は *pom.xml* に以下の記述を追加してくだ�
     public class UserSheet {
         
         @XlsLabelledCell(label="Date", type=LabelledCellType.Right)
-        @XlsDateConverter(excelPattern="yyyy/m/d")
+        @XlsDateTimeConverter(excelPattern="yyyy/m/d")
         Date createDate;
         
-        @XlsHorizontalRecords(tableLabel="User List", overRecord=OverRecordOperate.Insert)
+        @XlsHorizontalRecords(tableLabel="User List")
+        @XlsRecordOption(overOperation=OverOperation.Insert)
         List<UserRecord> users;
         
     }
@@ -194,6 +254,7 @@ XlsMapperはアノテーションを付与してJavaBeansとExcelをマッピン
 アノテーション :ref:`@XlsSheet <annotationXlsSheet>` を付与したJavaBeanを作成したうえで以下のようにして読み込みを行います。
 
 .. sourcecode:: java
+    
     XlsMapper xlsMapper = new XlsMapper();
     SampleSheet sheet = xlsMapper.load(
         new FileInputStream("example.xls"), // 読み込むExcelファイル

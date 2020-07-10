@@ -1,6 +1,7 @@
 package com.gh.mygreen.xlsmapper;
 
 import com.gh.mygreen.xlsmapper.annotation.XlsSheet;
+import com.gh.mygreen.xlsmapper.localization.MessageBuilder;
 
 
 /**
@@ -14,18 +15,20 @@ public class SheetNotFoundException extends XlsMapperException {
     /** serialVersionUID */
     private static final long serialVersionUID = 1604967589865552445L;
     
-    private String sheetName;
+    private final String sheetName;
     
-    private Integer sheetNumber;
+    private final Integer sheetNumber;
     
-    private Integer bookSheetSize;
+    private final Integer bookSheetSize;
     
     /**
      * 指定したシート名が見つからない場合に、そのシート名を指定するコンストラクタ。
      * @param sheetName シート名
      */
     public SheetNotFoundException(final String sheetName) {
-        this(sheetName, String.format("Cannot find sheet '%s'.", sheetName));
+        this(sheetName, MessageBuilder.create("sheet.notFound.name")
+                .var("sheetName", sheetName)
+                .format());
         
     }
     
@@ -38,6 +41,8 @@ public class SheetNotFoundException extends XlsMapperException {
     public SheetNotFoundException(final String sheetName, final String message) {
         super(message);
         this.sheetName = sheetName;
+        this.sheetNumber = null;
+        this.bookSheetSize = null;
     }
     
     /**
@@ -46,7 +51,11 @@ public class SheetNotFoundException extends XlsMapperException {
      * @param bookSheetSize ワークブックのシートサイズ。
      */
     public SheetNotFoundException(final int sheetNumber, final int bookSheetSize) {
-        super(String.format("Cannot find sheet number [%d]. book only has number of sheet %d.", sheetNumber, bookSheetSize));
+        super(MessageBuilder.create("sheet.notFound.overSize")
+                .var("sheetNumber", sheetNumber)
+                .var("bookSheetSize", bookSheetSize)
+                .format());
+        this.sheetName = null;
         this.sheetNumber = sheetNumber;
         this.bookSheetSize = bookSheetSize;
     }

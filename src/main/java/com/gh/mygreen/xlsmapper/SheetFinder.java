@@ -4,14 +4,19 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 
 import com.gh.mygreen.xlsmapper.annotation.XlsSheetName;
+import com.gh.mygreen.xlsmapper.fieldaccessor.FieldAccessor;
+import com.gh.mygreen.xlsmapper.fieldaccessor.FieldAccessorFactory;
+import com.gh.mygreen.xlsmapper.localization.MessageBuilder;
 import com.gh.mygreen.xlsmapper.annotation.XlsSheet;
-import com.gh.mygreen.xlsmapper.fieldprocessor.FieldAdaptor;
+import com.gh.mygreen.xlsmapper.util.ClassUtils;
+import com.gh.mygreen.xlsmapper.util.Utils;
 import com.gh.mygreen.xlsmapper.xml.AnnotationReadException;
 import com.gh.mygreen.xlsmapper.xml.AnnotationReader;
 
@@ -75,7 +80,11 @@ public class SheetFinder {
             return matches.toArray(new Sheet[matches.size()]);
         }
         
-        throw new AnnotationInvalidException("@XlsSheet requires name or number or regex parameter.", sheetAnno);
+        throw new AnnotationInvalidException(sheetAnno, MessageBuilder.create("anno.attr.required.any")
+                .varWithClass("property", beanClass)
+                .varWithAnno("anno", XlsSheet.class)
+                .varWithArrays("attrNames", "name", "number", "regex")
+                .format());
     }
     
     /**
@@ -112,9 +121,9 @@ public class SheetFinder {
         } else if(sheetAnno.regex().length() > 0) {
             // シート名（正規表現）をもとにして、取得する。
             String sheetNameValue = null;
-            FieldAdaptor sheetNameField = getSheetNameField(beanObj, annoReader);
-            if(sheetNameField != null && sheetNameField.getValue(beanObj) != null) {
-                sheetNameValue = sheetNameField.getValue(beanObj).toString();
+            Optional<FieldAccessor> sheetNameField = getSheetNameField(beanObj, annoReader);
+            if(sheetNameField.isPresent()) {
+                sheetNameValue = (String)sheetNameField.get().getValue(beanObj);
             }
             
             final Pattern pattern = Pattern.compile(sheetAnno.regex());
@@ -151,11 +160,19 @@ public class SheetFinder {
                     names.add(sheet.getSheetName());
                 }
                 throw new SheetNotFoundException(sheetAnno.regex(),
-                        String.format("found multiple sheet : %s.", Utils.join(names, ",")));
+                        MessageBuilder.create("sheet.regexMultipleHit")
+                            .var("regex", sheetAnno.regex())
+                            .var("names", names)
+                            .format());
             }
         }
         
-        throw new AnnotationInvalidException("@XlsSheet requires name or number or regex parameter.", sheetAnno);
+        throw new AnnotationInvalidException(sheetAnno, MessageBuilder.create("anno.attr.required.any")
+                .varWithClass("property", beanObj.getClass())
+                .varWithAnno("anno", XlsSheet.class)
+                .varWithArrays("attrNames", "name", "number", "regex")
+                .format());
+        
     }
     
     /**
@@ -163,39 +180,40 @@ public class SheetFinder {
      * @param beanObj
      * @param config
      * @param annoReader
-     * @return
+     * @return 見つからない場合、空を返す。
      * @throws AnnotationReadException 
      */
-    private FieldAdaptor getSheetNameField(final Object beanObj, final AnnotationReader annoReader) throws AnnotationReadException {
+    private Optional<FieldAccessor> getSheetNameField(final Object beanObj, final AnnotationReader annoReader) throws AnnotationReadException {
+        
+        FieldAccessorFactory adpterFactory = new FieldAccessorFactory(annoReader);
         
         Class<?> clazz = beanObj.getClass();
         for(Method method : clazz.getMethods()) {
             method.setAccessible(true);
-            if(!Utils.isGetterMethod(method)) {
+            if(!ClassUtils.isGetterMethod(method)) {
                 continue;
             }
             
-            XlsSheetName sheetNameAnno = annoReader.getAnnotation(clazz, method, XlsSheetName.class);
-            if(sheetNameAnno == null) {
+            if(!annoReader.hasAnnotation(method, XlsSheetName.class)) {
                 continue;
             }
             
-            return new FieldAdaptor(clazz, method, annoReader);
+            return Optional.of(adpterFactory.create(method));
         }
         
         for(Field field : clazz.getDeclaredFields()) {
             field.setAccessible(true);
             
-            XlsSheetName sheetNameAnno = annoReader.getAnnotation(clazz, field, XlsSheetName.class);
-            if(sheetNameAnno == null) {
+            if(!annoReader.hasAnnotation(field, XlsSheetName.class)) {
                 continue;
             }
             
-            return new FieldAdaptor(clazz, field, annoReader);
+            return Optional.of(adpterFactory.create(field));
+            
         }
         
         // not found
-        return null;
+        return Optional.empty();
     }
     
 }

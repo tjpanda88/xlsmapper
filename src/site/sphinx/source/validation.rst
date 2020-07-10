@@ -1,77 +1,88 @@
 ======================================
-読み込んだ値の入力値検証
+値の検証方法
 ======================================
 
 --------------------------------------------------------
-入力値検証の基本
+検証の基本
 --------------------------------------------------------
 
 
- XlsMapperの入力値検証は、SpringFrameworkのValidation機構に似た方法をとります。
+ XlsMapperの検証は、SpringFrameworkのValidation機構に似た方法をとります。
  
 * エラー情報は、 ``SheetBindingErrors`` クラスに格納します。
 
-  * SheetBindingErrorsのインスタンスを、読み込み時に引数として渡します。
+  * SheetBindingErrorsのインスタンスは、メソッド ``XlsMapper#loadDetail(...)`` のように、XlsMapperのメソッド 'xxxDetail()' から取得できます。
 
-* セルの値をJavaオブジェクトに変換の失敗情報は、読み込み時に自動的に作成されます。
+* セルの値をJavaオブジェクトへ変換の失敗情報は、読み込み時に自動的に作成され、格納されます。
 
-  * 1つのセルの型変換に失敗しても処理を続行するよう、 :doc:`システム設定XlsMapperConfig <otheruse_config>` のプロパティ ``continueTypeBindFailure`` を'true'に設定します。
+  * 1つのセルの型変換に失敗しても処理を続行するよう、 :doc:`システム設定 <configuration>` のプロパティ ``continueTypeBindFailure`` を 'true' に設定します。
 
-* 別途用意したBeanに対するValidatorにより、値を検証します。
+* 型変換以外の検証は、独自に実装したBeanに対するValidatorにより、値を検証します。
 
-  * 通常は、抽象クラス ``AbstractObjectValidator`` を継承して作成します。
+  * 通常は、抽象クラス ``ObjectValidatorSupport`` を継承して作成します。
   * ``@XlsHorizontalRecords`` のようにネストしたBeanの場合、リストの要素のBeanのValidatorを別途用意します。
 
-* エラーがある場合、 ``SheetMessageConverter`` を使用して、エラーオブジェクトを文字列に変換します。
+* エラー情報は、SheetBindingErrorsに、エラーオブジェクト ``ObjectError`` として格納されます。
+
+  * ObjectErrorには、メッセージコードや引数が保持されているため、``SheetErrorFormatter`` を使用して、エラーオブジェクトを文字列に変換します。
 
 
 .. sourcecode:: java
+    :linenos:
     
     XlsMapper xlsMapper = new XlsMapper();
     
     // 型変換エラーが起きても処理を続行するよう設定
-    xlsMapper.getConig().setContinueTypeBindFailure(true);
+    xlsMapper.getConiguration().setContinueTypeBindFailure(true);
     
-    // エラー情報の管理クラスのインスタンスの作成。オブジェクト名をクラス名に設定します。
-    SheetBindingErrors errors = new SheetBindingErrors(Employer.class);
+    // エラー情報を含んだ詳細な戻り値を取得します。
+    SheetBindingErrors<Employer> bindingResult = xlsMapper.loadDetail(xlsIn, Employer.class);
     
-    // エラー情報を読み込み時に渡し、読み込み処理を実行します。
-    Employer bean = xlsMapper.load(xlsIn, Employer.class, errors);
+    // マッピングしたオブジェクトを取得します。
+    Employer bean = bindingResult.getTarget();
     
     // BeanのValidatorを実行します。
     EmployerValidator validator = new EmployerValidator();
     validator.validate(bean, errors);
     
+    // グループを指定する場合(クラスで指定する)
+    // validator.validate(bean, errors, Hint.class);
+    
     // 値の検証結果を文字列に変換します。
     if(errors.hasErrors()) {
-        SheetMessageConverter messageConverter = new SheetMessageConverter();
+        SheetErrorFormatter errorFormatter = new SheetErrorFormatter();
         for(ObjectError error : errors.getAllErrors()) {
-            String message = messageConverter.convertMessage(error);
+            String message = errorFormatter.format(error);
         }
     }
+
 
 --------------------------------------------------------
 独自の入力値検証
 --------------------------------------------------------
 
-
-Validatorは、 ``AbstractObjectValidator`` を継承して作成します。
+Validatorは、 ``ObjectValidatorSupport`` を継承して作成します。
 
 * Genericsで検証対象のBeanクラスを指定し、validateメソッド内で検証処理の実装を行います。
 * 検証対象のフィールドにエラーがあるかどうかは、 `SheetBindingErrors#hasFieldErrors` でチェックできます。
     
-  * 型変換エラーがある場合、Beanに値がマッピングされていないため、エラーがあるかどうかをチェックします。
+  * 型変換エラーがある場合、Beanのプロパティに値がマッピングされていないため、エラーがあるかどうかをチェックします。
     
-* フィールドに対するエラーを設定する場合、`SheetBindingErrors#rejectValue("フィールド名", "エラーコード", "エラー引数")` で設定します。
-    
-  * Map<String, Points>フィールドでセルのアドレスを保持している場合は、`SheetBindingErrors#rejectSheetValue(...)` でセルのアドレスを指定できます。
+* フィールドに対するエラーを設定する場合、`SheetBindingErrors#createFieldError("フィールド名", "エラーコード")` で設定します。
+  
+  * ビルダクラス ``InternalFieldErrorBuilder`` を使って組み立てます。
+  
+  * Map<String, Points>フィールドでセルのアドレスを保持している場合は、`InternalFieldErrorBuilder#address(...)` でセルのアドレスを指定できます。
   
   * エラー引数は、インデックス形式の配列型と名前付きのマップ型のどちらでも指定できます。名前付きのマップ型の利用をお勧めします。
-    
+
+* Validatoinの実行時には、BeanValdiation(JSR-303)のように、ヒントとなるグループ情報を渡すことがき、もし、値が渡されたら、特定の判定を行ったりもできます。
+
 
 .. sourcecode:: java
+    :linenos:
     
-    public class EmployerValidator extends AbstractObjectValidator<Employer>{
+    public class EmployerValidator extends ObjectValidatorSupport<Employer> {
         
         // ネストしたBeanのValidator
         private EmployerHistoryValidator historyValidator;
@@ -81,22 +92,22 @@ Validatorは、 ``AbstractObjectValidator`` を継承して作成します。
         }
         
         @Override
-        public void validate(final Employer targetObj, final SheetBindingErrors errors) {
+        public void validate(Employer targetObj SheetBindingErrors errors, Class<?>... groups) {
             
             // 型変換などのエラーがない場合、文字長のチェックを行う
             // チェック対象のフィールド名を指定します。
             if(!errors.hasFieldErrors("name")) {
                 if(targetObj.getName().length() > 10) {
-                    // インデックス形式のメッセージ引数の指定
-                    //errors.rejectValue("name", "error.maxLength", new Object[]{10});
-                    
+                
                     // 名前付きの引数、セルのアドレスを渡す場合の指定
-                    Map<String, Object> vars = new HashMap<>();
-                    Point address = targetObj.positions("name");
-                    errors.rejectSheetValue("name", address, "error.maxLength", vars);
+                    errors.createFieldError("name", "error.maxLength")
+                        .address(targetObj.positions("name"))
+                        .variables("max", 10)
+                        .buildAndAddError();
                 }
             }
             
+            // レコードの要素の値の検証
             for(int i=0; i < targetObj.getHistory().size(); i++) {
                 // ネストしたBeanの検証の実行
                 // パスをネストする。リストの場合はインデックスを指定する。
@@ -136,32 +147,44 @@ Validatorは、 ``AbstractObjectValidator`` を継承して作成します。
  
 
 .. sourcecode:: java
+    :linenos:
     
-    public class EmployerHistoryValidator extends AbstractObjectValidator<EmployerHistory>{
+    public class EmployerHistoryValidator extends ObjectValidatorSupport<EmployerHistory> {
         
         @Override
-        public void validate(final EmployerHistory targetObj, final SheetBindingErrors errors) {
+        public void validate(EmployerHistory targetObj, SheetBindingErrors errors, Class<?>... groups) {
             
-            final CellField<Date> historyDateField = new CellField<Date>(targetObj, "historyDate");
+            // プロパティ historyDate に対するフィールドの組み立てと値の検証
+            final CellField<Date> historyDateField = new CellField<Date>("historyDate", errors);
             historyDateField.setRequired(true)
                 .add(new MinValidator<Date>(new Date(), "yyyy-MM-dd"))
-                .validate(errors);
+                .validate(groups);
             
             
-            final CellField<String> commentField = new CellField<String>(targetObj, "comment");
+            // プロパティ comment に対するフィールドの組み立てと値の検証
+            final CellField<String> commentField = new CellField<String>("comment", errors);
             commentField.setRequired(false)
                 .add(StringValidator.maxLength(5))
-                .validate(errors);
+                .validate(groups);
             
-            if(historyDateField.hasNotErrors(errors) && commentField.hasNotErrors(errors)) {
+            // 
+            if(historyDateField.hasNotErrors() && commentField.hasNotErrors()) {
                 // 項目間のチェックなど
                 if(commentField.isInputEmpty()) {
-                    errors.reject("error.01");
+                    errors.createGlobalError("error.01").buildAndAddError();
                 }
             }
             
         }
     }
+
+
+.. note::
+    
+    アノテーション @XlsLabelledArray や @XlsArrayColumns などを使ってフィールドが配列やリストへにマッピングした値を検証する場合、 
+    ``ArrayCellField`` を使用します。 `[ver.2.0+]`
+    
+    使用方法は、CellFieldと変わりません。
 
 
 --------------------------------------------------------
@@ -170,13 +193,13 @@ Validatorは、 ``AbstractObjectValidator`` を継承して作成します。
 
 
 メッセージファイルは、クラスパスのルートに ``SheetValidationMessages.properties`` というプロパティファイルを配置しておくと、自動的に読み込まれます。
- 
-* 型変換エラーは、読み込み時に自動的にチェックされ、エラーコードは、 ``cellTypeMismatch`` と決まっています。
- 
-  * フィールドのクラスタイプごとに、メッセージを指定することもでき、 `cellTypeMismatch.\<クラス名\>` で定義します。
-  * さらに、フィールド名でも指定することができ、 `cellTypeMismatch.\<フィールド名\>` で定義します。
-  * クラスタイプよりもフィールド名で指定する方が優先されます。
- 
+
+* プロパティファイルは、文字コードをUTF-8に設定し、asciiコードへの変換は不要です。 `[ver.2.0+]`
+
+* エラーメッセージは、下記の表「エラーメッセージの一致順」に従い一致したものが用いれます。
+  
+  * 型変換エラーは、読み込み時に自動的にチェックされ、エラーコードは、 ``cellTypeMismatch`` と決まっています。
+
 * メッセージ中ではEL式を利用することができます。
 * メッセージ中の通常の変数は、``{変数名}`` で定義し、EL式は ``${EL式}`` で定義します。
   
@@ -184,6 +207,7 @@ Validatorは、 ``AbstractObjectValidator`` を継承して作成します。
   
 
 .. sourcecode:: properties
+    :linenos:
     
     ## メッセージの定義
     ## SheetValidationMessages.properties
@@ -192,6 +216,9 @@ Validatorは、 ``AbstractObjectValidator`` を継承して作成します。
     # {sheetName} : シート名
     # {cellAddress} : セルのアドレス。'A1'などの形式。
     # {label} : フィールドの見出し。
+    
+    # フィールドエラー
+    cellFieldError.patern==[{sheetName}]:${empty label ? '' : label} - {cellAddress}は'書式に一致しませんでした。
     
     # 型変換エラー
     cellTypeMismatch=[{sheetName}]:${empty label ? '' : label} - {cellAddress}の型変換に失敗しました。
@@ -204,18 +231,72 @@ Validatorは、 ``AbstractObjectValidator`` を継承して作成します。
     cellTypeMismatch.updateTime=[{sheetName}]:${empty label ? '' : label} - {cellAddress}は'yyyy/MM/dd'の書式で指定してください。
 
 
+
+.. list-table:: エラーメッセージの一致順
+   :widths: 10 40 50
+   :header-rows: 1
+   
+   * - 優先順位
+     - エラーコードの形式
+     - サンプル
+   
+   * - 1
+     - `\<エラーコード\>.\<完全オブジェクト名\>.\<完全パス\>.\<フィールド名\>`
+     - `cellFieldError.pattern.com.sample.SampleBean.list[1].address`
+   
+   * - 2
+     - `\<エラーコード\>.\<完全オブジェクト名\>.\<パス\>.\<フィールド名\>`
+     - `cellFieldError.pattern.com.sample.SampleBean.list.address`
+     
+   * - 3
+     - `\<エラーコード\>.\<完全オブジェクト名\>.\<フィールド名\>`
+     - `cellFieldError.pattern.com.sample.SampleBean.address`
+   
+   * - 4
+     - `\<エラーコード\>.\<オブジェクト名\>.\<完全パス\>.\<フィールド名\>`
+     - `cellFieldError.pattern.SampleBean.list[1].address`
+   
+   * - 5
+     - `\<エラーコード\>.\<オブジェクト名\>.\<パス\>.\<フィールド名\>`
+     - `cellFieldError.pattern.SampleBean.list.address`
+   
+   * - 5
+     - `\<エラーコード\>.\<オブジェクト名\>.\<フィールド名\>`
+     - `cellFieldError.pattern.SampleBean.address`
+   
+   * - 6
+     - `\<エラーコード\>.\<完全パス\>.\<フィールド名\>`
+     - `cellFieldError.pattern.list[1].address`
+   
+   * - 7
+     - `\<エラーコード\>.\<パス\>.\<フィールド名\>`
+     - `cellFieldError.pattern.list.address`
+   
+   * - 8
+     - `\<エラーコード\>.\<フィールド名\>`
+     - `cellFieldError.pattern.address`
+   
+   * - 9
+     - `\<エラーコード\>.\<フィールドのクラスタイプ\>`
+     - `cellFieldError.pattern.java.lang.String`
+   
+   * - 10
+     - `\<エラーコード\>`
+     - `cellFieldError.pattern`
+
 .. note::
     
     メッセージ中で、セルのアドレス（変数{cellAddress}）、ラベル（変数{label}）を利用したい場合は、
     Beanクラスに位置情報を保持するフィールド ``Map<String, Point> positions`` と
     ラベル情報を保持する ``Map<String, String> labels`` を定義しておく必要があります。
 
+
 --------------------------------------------------------
 メッセージファイルの読み込み方法の変更
 --------------------------------------------------------
 
-メッセージファイルは、ResourceBundleやProperties、またSpringのMessageSourceからも取得できます。
-設定する場合、``SheetMessageConverter#setMessageResolver(...)`` で対応するクラスを設定します。
+メッセージファイルは、``java.util.ResourceBundle`` や ``java.util.Properties`` 、またSpringの ``org.springframework.context.MessageSource`` からも取得できます。
+設定する場合、``SheetErrorFormatter#setMessageResolver(...)`` で対応するクラスを設定します。
 
 .. list-table:: メッセージファイルのブリッジ用クラス
    :widths: 50 50
@@ -239,76 +320,15 @@ Validatorは、 ``AbstractObjectValidator`` を継承して作成します。
     // SpringのMessageSourceからメッセージを取得する場合
     MessageSource messageSource = /*...*/;
     
-    SheetMessageConverter messageConverter = new SheetMessageConverter();
-    messageConverter.setMessageResolver(new SpringMessageResolver(messageSource));
+    SheetErrorFormatter errorFormatter = new SheetErrorFormatter();
+    errorFormatter.setMessageResolver(new SpringMessageResolver(messageSource));
 
-
---------------------------------------------------------
-EL式のカスタマイズ
---------------------------------------------------------
-
-
-メッセージ中の式言語は、EL式以外も利用できます。
-
-EL式の他、MVELが利用できます。
-
-使用する式言語を変更する場合、``MessageInterapolator#setExpressionLanguage(...)`` で式言語の実装を設定します。
-
-MVELを利用する場合、別途、ライブラリが必要になります。
-
-.. sourcecode:: java
-    
-    SheetMessageConverter messageConverter = new SheetMessageConverter();
-    
-    // EL式の管理クラスの作成
-    ExpressionLanguageRegistry elRegistry = new ExpressionLanguageRegistry();
-    
-    // 式言語の設定をMVELに切り替える場合
-    messageConverter.getMessageInterporlator()
-        .setExpressionLanguage(new ExpressionLanguageMVELImpl());
-
-
-.. note:: 
-   
-   式言語を変更した場合、メッセージ中の${EL式}を、言語特有のものに変更する必要があります。
-   
-
-.. sourcecode:: xml
-    
-    <!-- ====================== 各式言語のライブラリ ===============-->
-    <!-- EL式を利用する場合 -->
-    <dependency>
-        <groupId>org.glassfish</groupId>
-        <artifactId>javax.el</artifactId>
-        <version>3.0.1-b08</version>
-    </dependency>
-    
-    <!-- 式言語:MVEL -->
-    <dependency>
-        <groupId>org.mvel</groupId>
-        <artifactId>mvel2</artifactId>
-        <version>2.2.2.Final</version>
-    </dependency>
-
-
-.. list-table:: 式言語の実装クラス
-   :widths: 50 50
-   :header-rows: 1
-   
-   * - XlsMapper提供のクラス
-     - 説明
-   
-   * - com.gh.mygreen.xlsmapper.expression.ExpressionLanguageELImpl
-     - EL2.0/3.0を利用するためのクラス。利用可能なライブラリのバージョンによって自動的に判断します。
-   
-   * - com.gh.mygreen.xlsmapper.expression.ExpressionLanguageMVELImpl
-     - MVELを利用するためのクラス。ライブラリMVELが別途必要になります。
 
 --------------------------------------------------------
 Bean Validationを使用した入力値検証
 --------------------------------------------------------
 
- BeanValidation JSR-303(ver.1.0)/JSR-349(ver.1.1)を利用する場合、ライブラリで用意されている「SheetBeanValidator」を使用します。
+ BeanValidation JSR-303(ver.1.0)/JSR-349(ver.1.1)/JSR-380(ver.2.0)を利用する場合、ライブラリで用意されている「SheetBeanValidator」を使用します。
  
 * BeanValidationの実装として、`Hibernate Validator <http://hibernate.org/validator/>`_ が必要になるため、依存関係に追加します。
   
@@ -318,14 +338,19 @@ Bean Validationを使用した入力値検証
   
   * Bean Validationの検証結果も、SheetBindingErrorsの形式に変換され格納されます。
   
-* メッセー時を出力する場合は、SheetMessageConverterを使用します。
+* メッセー時を出力する場合は、SheetErrorFormatterを使用します。
 
 
 .. sourcecode:: java
+    :linenos:
+    
+    XlsMapper xlsMapper = new XlsMapper();
+    
+    // 型変換エラーが起きても処理を続行するよう設定
+    xlsMapper.getConiguration().setContinueTypeBindFailure(true);
     
     // シートの読み込み
-    SheetBindingErrors errors = new SheetBindingErrors(Employer.class);
-    Employer beanObj = loadSheet(new File("./src/test/data/employer.xlsx"), errors);
+    SheetBindingErrors<Employer> errors = xlsMapper.loadSheetDetail(new File("./src/test/data/employer.xlsx"), errors);
     
     // Bean Validationによる検証の実行
     SheetBeanValidator validatorAdaptor = new SheetBeanValidator();
@@ -333,16 +358,17 @@ Bean Validationを使用した入力値検証
     
     // 値の検証結果を文字列に変換します。
     if(errors.hasErrors()) {
-        SheetMessageConverter messageConverter = new SheetMessageConverter();
+        SheetErrorFormatter errorFormatter = new SheetErrorFormatter();
         for(ObjectError error : errors.getAllErrors()) {
-            String message = messageConverter.convertMessage(error);
+            String message = errorFormatter.format(error);
         }
     }
 
 .. sourcecode:: xml
+    :caption:  Bean Validation 1.1 の依存ライブラリ
+    :linenos:
     
     <!-- ====================== Bean Validationのライブラリ ===============-->
-    <!-- Bean Validation 1.1 系を利用する -->
     <dependency>
         <groupId>javax.validation</groupId>
         <artifactId>validation-api</artifactId>
@@ -350,11 +376,42 @@ Bean Validationを使用した入力値検証
         <scope>provided</scope>
     </dependency>
     <dependency>
-        <groupId>org.hibernate</groupId>
+    <groupId>org.hibernate</groupId>
         <artifactId>hibernate-validator</artifactId>
-        <version>5.1.3.Final</version>
+        <version>5.3.3.Final</version>
         <scope>provided</scope>
     </dependency>
+    <dependency>
+        <groupId>org.glassfish</groupId>
+        <artifactId>javax.el</artifactId>
+        <version>3.0.1-b10</version>
+        <scope>provided</scope>
+    </dependency>
+
+.. sourcecode:: xml
+    :caption:  Bean Validation 2.0 の依存ライブラリ
+    :linenos:
+    
+    <!-- ====================== Bean Validationのライブラリ ===============-->
+    <dependency>
+        <groupId>javax.validation</groupId>
+        <artifactId>validation-api</artifactId>
+        <version>2.0.1.Final</version>
+        <scope>provided</scope>
+    </dependency>
+    <dependency>
+    <groupId>org.hibernate</groupId>
+        <artifactId>hibernate-validator</artifactId>
+        <version>6.0.10.Final</version>
+        <scope>provided</scope>
+    </dependency>
+    <dependency>
+        <groupId>org.glassfish</groupId>
+        <artifactId>javax.el</artifactId>
+        <version>3.0.1-b10</version>
+        <scope>provided</scope>
+    </dependency>
+
 
 
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -368,16 +425,18 @@ XlsMapperのクラス ``com.gh.mygreen.xlsmapper.validation.beanvalidation.Messa
 上記の「メッセージファイルのブリッジ用クラス」を渡すことができます。
 
 .. sourcecode:: java
+    :linenos:
     
     // BeanValidationのValidatorの定義
     ValidatorFactory validatorFactory = Validation.buildDefaultValidatorFactory();
     Validator validator = validatorFactory.usingContext()
-            .messageInterpolator(new MessageResolverInterpolator(new ResourceBundleMessageResolver()))
+            .messageInterpolator(new MessageInterpolatorAdapter(
+                     .new ResourceBundleMessageResolver(), new MessageInterpolator()))
             .getValidator();
-   
-   // BeanValidationのValidatorを渡す
-   SheetBeanValidator sheetValidator = new SheetBeanValidator(validator);
-   
+    
+    // BeanValidationのValidatorを渡す
+    SheetBeanValidator sheetValidator = new SheetBeanValidator(validator);
+    
 
 
 
@@ -387,10 +446,11 @@ EL式の処理系をXlsMapperのクラス ``com.gh.mygreen.xlsmapper.validation.
 XslMapperの ``ExpressionLanguageELImpl`` は、EL3.0のライブラリが読み込まれている場合、3.x系の処理に切り替えます。
 
 .. sourcecode:: java
+    :linenos:
     
     // BeanValidatorの式言語の実装を独自のものにする。
     ValidatorFactory validatorFactory = Validation.buildDefaultValidatorFactory();
-    Validator beanValidator = validatorFactory.usingContext()
+    Validator validator = validatorFactory.usingContext()
             .messageInterpolator(new MessageInterpolatorAdapter(
                     // メッセージリソースの取得方法を切り替える
                     new ResourceBundleMessageResolver(ResourceBundle.getBundle("message.OtherElMessages")),

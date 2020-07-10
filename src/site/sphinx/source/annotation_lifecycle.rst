@@ -1,8 +1,8 @@
 -----------------------------------------------------------
-ライフサイクル・コールバック用のアノテーション
+ライフサイクルイベントの管理
 -----------------------------------------------------------
 
-読み込みと書き込み処理の前、後それぞれの処理イベントにおいて、任意の処理を実装できます。 
+読み込みと書き込み処理の前、後それぞれのライフサイクルのイベントにおいて、任意の処理を呼び出すことができます。 
 
 実装方法として、JavaBeanに直接処理を実装する方法と、リスナークラスを指定して別のクラスで実装する方法の2種類があります。
 
@@ -46,14 +46,14 @@
    * - ``org.apache.poi.ss.usermodel.Sheet``
      - | 処理対象のSheetオブジェクト。
    
-   * - ``com.gh.mygreen.xlsmapper.XlsMapperConfig``
-     - | :doc:`XlsMapperの設定オブジェクト <otheruse_config>` 。
+   * - ``com.gh.mygreen.xlsmapper.Configuration``
+     - | :doc:`XlsMapperの設定オブジェクト <configuration>` 。
    
    * - ``com.gh.mygreen.xlsmapper.validation.SheetBindingErrors``
      - | :doc:`シートのエラー情報 <validation>` を格納するオブジェクト。
        | 読み込み時に引数で渡したオブジェクト。
    
-   * - `処理対象のBeanオブジェクト`
+   * - `処理対象のBeanクラス`
      - | 処理対象のBeanオブジェクト。 `[ver1.3+]`
 
    * - ``java.lang.Object``
@@ -78,6 +78,7 @@ JavaBeanクラスに実装する場合
 実行順は、親であるシートクラスの処理が先に処理されます。 
 
 .. sourcecode:: java
+    :linenos:
     
     // シートクラス
     @XlsSheet(name="Users")
@@ -103,7 +104,7 @@ JavaBeanクラスに実装する場合
         private String name;
         
         @XlsPostLoad
-        public void onPostLoad(Sheet sheet, XlsMapperConfig config, SheetBindingErrors errors) {
+        public void onPostLoad(Sheet sheet, Configuration config, SheetBindingErrors errors) {
             // 読み込み後に実行される処理
             // 入力値チェックなどを行う
         }
@@ -117,15 +118,16 @@ JavaBeanクラスに実装する場合
 リスナークラスに実装する場合
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-クラスにアノテーション ``@XlsListener`` を付与し、属性 ``listenerClass`` で処理が実装されたクラスを指定します。 `[ver1.3+]`
+クラスにアノテーション ``@XlsListener`` を付与し、属性 ``value`` で処理が実装されたクラスを指定します。 `[ver1.0+]`
 
-指定したリスナークラスのインスタンスは、システム設定「beanFactory」経由で作成されるため、:doc:`SpringFrameworkのコンテナからインスタンスを取得 <extension_beanfactory>` することもできます。
+指定したリスナークラスのインスタンスは、システム設定「beanFactory」経由で作成されるため、:doc:`SpringFrameworkのコンテナからインスタンスを取得 <spring>` することもできます。
 
 .. sourcecode:: java
+    :linenos:
     
     // シートクラス
     @XlsSheet(name="Users")
-    @XlsListener(listenerClass=SampleSheetListener.class)
+    @XlsListener(SampleSheetListener.class)
     public class SampleSheet {
     
         @XlsHorizontalRecords(tableLabel="ユーザ一覧")
@@ -144,7 +146,7 @@ JavaBeanクラスに実装する場合
     }
     
     // レコードクラス
-    @XlsListener(listenerClass=UserRecordListener.class)
+    @XlsListener(UserRecordListener.class)
     public class UserRecord {
         
         @XlsColumn(columnName="ID")
@@ -159,7 +161,7 @@ JavaBeanクラスに実装する場合
     public static class UserRecordListener {
         
         @XlsPostLoad
-        public void onPostLoad(UserRecord targetObj, Sheet sheet, XlsMapperConfig config, SheetBindingErrors errors) {
+        public void onPostLoad(UserRecord targetObj, Sheet sheet, Configuration config, SheetBindingErrors errors) {
             // 読み込み後に実行される処理
             // 入力値チェックなどを行う
         }

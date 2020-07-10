@@ -1,176 +1,172 @@
 package com.gh.mygreen.xlsmapper.validation;
 
-import java.awt.Point;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
-import org.apache.poi.ss.usermodel.Cell;
-
+import com.gh.mygreen.xlsmapper.util.CellPosition;
 
 /**
- * {@link FieldError}のインスタンスを組み立てるクラス。
- * 
+ * {@link FieldError}のインスタンスを組み立てるビルダ。
+ *
+ * @version 2.0
  * @author T.TSUCHIE
  *
  */
 public class FieldErrorBuilder {
     
-    private String objectName;
+    private final String objectName;
     
-    private String fieldPath;
+    private final String field;
     
-    private Object fieldValue;
+    private final String[] codes;
     
-    private Class<?> fieldType;
+    private Object rejectedValue;
     
-    private boolean typeBindFailure;
+    private boolean conversionFailure;
     
-    private String[] codes;
-    
-    private Object[] args;
-    
-    private Map<String, ?> vars;
-    
-    private String sheetName;
-    
-    private Point cellAddress;
-    
-    private String label;
+    private Map<String, Object> variables = new HashMap<>();
     
     private String defaultMessage;
     
-    private FieldErrorBuilder() {
-        
-    }
+    private String sheetName;
+    
+    private String label;
+    
+    private CellPosition address;
     
     /**
-     * {@link FieldErrorBuilder}のインスタンスを作成する
-     * @return
+     * ビルダのインスタンスを作成します
+     * @param objectName オブジェクト名
+     * @param field フィールド名。ネストしている場合は、親のパスを付与した形式（e.g. person.name）で指定します。
+     * @param codes メッセージコード。複数指定可能で、先頭にあるものほど優先度が高い。
      */
-    public static FieldErrorBuilder create() {
-        return new FieldErrorBuilder();
-    }
-    
-    /**
-     * {@link FieldError}のインスタンスを組み立てる
-     * @return
-     */
-    public FieldError build() {
-        
-        final FieldError error;
-        if(cellAddress == null) {
-            if(args != null) {
-                error = new FieldError(objectName, fieldPath,
-                        fieldType, fieldValue,
-                        typeBindFailure,
-                        codes, args);
-            } else {
-                error = new FieldError(objectName, fieldPath,
-                        fieldType, fieldValue,
-                        typeBindFailure,
-                        codes, vars);
-            }
-        } else {
-            if(args != null) {
-                error = new CellFieldError(objectName, fieldPath,
-                        fieldType, fieldValue,
-                        typeBindFailure,
-                        codes, args,
-                        sheetName, cellAddress);
-            } else {
-                error = new CellFieldError(objectName, fieldPath,
-                        fieldType, fieldValue,
-                        typeBindFailure,
-                        codes, vars,
-                        sheetName, cellAddress);
-            }
-        }
-        
-        error.setLabel(label);
-        error.setDefaultMessage(defaultMessage);
-        
-        return error;
-    }
-    
-    public FieldErrorBuilder objectName(final String objectName) {
+    public FieldErrorBuilder(final String objectName, final String field, final String[] codes) {
         this.objectName = objectName;
-        return this;
-    }
-    
-    public FieldErrorBuilder fieldPath(final String fieldPath) {
-        this.fieldPath = fieldPath;
-        return this;
-    }
-    
-    public FieldErrorBuilder fieldPath(final String parentPath, final String childPath) {
-        this.fieldPath = parentPath + SheetBindingErrors.PATH_SEPARATOR + childPath;
-        return this;
-    }
-    
-    public FieldErrorBuilder fieldType(final Class<?> fieldType) {
-        this.fieldType = fieldType;
-        return this;
-    }
-    
-    public FieldErrorBuilder fieldValue(final Object fieldValue) {
-        this.fieldValue = fieldValue;
-        return this;
-    }
-    
-    public FieldErrorBuilder typeBindFailure(final boolean typeBindFailure) {
-        this.typeBindFailure = typeBindFailure;
-        return this;
-    }
-    
-    public FieldErrorBuilder codes(String[] codes) {
+        this.field = field;
         this.codes = codes;
+    }
+    
+    /**
+     * エラートとなったフィールドの値を設定します。
+     * @param rejectedValue エラー元の値
+     * @return 自身のインスタンス
+     */
+    public FieldErrorBuilder rejectedValue(final Object rejectedValue) {
+        this.rejectedValue = rejectedValue;
         return this;
     }
     
-    public FieldErrorBuilder codes(String code) {
-        this.codes = new String[]{code};
+    /**
+     * 型変換エラーかどうかを設定します。
+     * @param conversionFailure trueの場合、型変換エラー
+     * @return 自身のインスタンス
+     */
+    public FieldErrorBuilder conversionFailure(final boolean conversionFailure) {
+        this.conversionFailure = conversionFailure;
         return this;
     }
     
-    public FieldErrorBuilder codes(String[] codes, Object[] args) {
-        this.codes = codes;
-        this.args = args;
+    /**
+     * メッセージ中の変数を追加します。
+     * @param variables 変数のマップ
+     * @return 自身のインスタンス
+     */
+    public FieldErrorBuilder variables(final Map<String, Object> variables) {
+        this.variables.putAll(variables);
         return this;
     }
     
-    public FieldErrorBuilder codes(String[] codes, Map<String, ?> vars) {
-        this.codes = codes;
-        this.vars = vars;
+    /**
+     * メッセージ中の変数を追加します。
+     * @param key 変数のキー名
+     * @param value 変数の値
+     * @return 自身のインスタンス
+     */
+    public FieldErrorBuilder variables(final String key, final Object value) {
+        this.variables.put(key, value);
         return this;
     }
     
+    /**
+     * デフォルトメッセージを設定します。
+     * <p>指定したコードに対するメッセージが見つからない場合に、適用されるメッセージ。</p>
+     * @param defaultMessage デフォルトメッセージ
+     * @return 自身のインスタンス
+     */
+    public FieldErrorBuilder defaultMessage(final String defaultMessage) {
+        this.defaultMessage = defaultMessage;
+        return this;
+    }
+    
+    /**
+     * シート名を設定します。
+     * @param sheetName シート名
+     * @return 自身のインスタンス
+     */
     public FieldErrorBuilder sheetName(final String sheetName) {
         this.sheetName = sheetName;
         return this;
     }
     
-    public FieldErrorBuilder cellAddress(final Cell cell ) {
-        this.cellAddress = new Point(cell.getColumnIndex(), cell.getRowIndex());
-        return this;
-    }
-    
-    public FieldErrorBuilder cellAddress(final Point position ) {
-        this.cellAddress = position;
-        return this;
-    }
-    
-    public FieldErrorBuilder cellAddress(final int column, final int row) {
-        this.cellAddress = new Point(column, row);
-        return this;
-    }
-    
+    /**
+     * ラベルを設定します。
+     * <p>テーブル名やカラム名が設定します。</p>
+     * @param label ラベル
+     * @return 自身のインスタンス
+     */
     public FieldErrorBuilder label(final String label) {
         this.label = label;
         return this;
     }
     
-    public FieldErrorBuilder defaultMessage(String defaultMessage) {
-        this.defaultMessage = defaultMessage;
+    /**
+     * ラベルを設定します。
+     * <p>テーブル名やカラム名が設定します。</p>
+     * <p>値が存在する場合のみ設定されます。</p>
+     * @param label ラベル
+     * @return 自身のインスタンス
+     */
+    public FieldErrorBuilder label(final Optional<String> label) {
+        label.ifPresent(l -> label(l));
         return this;
+    }
+    
+    /**
+     * セルのアドレス情報を設定します。
+     * @param address アドレス情報
+     * @return 自身のインスタンス
+     */
+    public FieldErrorBuilder address(final CellPosition address) {
+        this.address = address;
+        return this;
+    }
+    
+    /**
+     * セルのアドレス情報を設定します。
+     * <p>値が存在する場合のみ設定されます。</p>
+     * @param address アドレス情報
+     * @return 自身のインスタンス
+     */
+    public FieldErrorBuilder address(final Optional<CellPosition> address) {
+        address.ifPresent(a -> address(a));
+        return this;
+    }
+    
+    /**
+     * {@link FieldError}のインスタンスを組み立てる。
+     * @return {@link FieldError}のインスタンス
+     */
+    public FieldError build() {
+        
+        final FieldError error = new FieldError(objectName, field, conversionFailure, codes, variables);
+        error.setDefaultMessage(defaultMessage);
+        error.setSheetName(sheetName);
+        error.setLabel(label);
+        error.setRejectedValue(rejectedValue);
+        error.setAddress(address);
+        
+        return error;
     }
     
 }
